@@ -1,0 +1,30 @@
+apiVersion: gateway.omniroute.ai/v1alpha1
+kind: OmniRoute
+metadata:
+  labels:
+    app.kubernetes.io/name: omniroute-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: omniroute-sample
+  namespace: ai-platform
+spec:
+  image:
+    repository: diegosouzapw/omniroute
+    tag: "3.8.51"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 20128
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  credentials:
+    existingSecret: omniroute-secrets
+  persistence:
+    enabled: true
+    size: 1Gi
+    accessMode: ReadWriteOnce
