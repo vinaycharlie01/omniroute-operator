@@ -37,13 +37,13 @@ import (
 )
 
 const (
-	defaultImage      = "diegosouzapw/omniroute"
-	defaultTag        = "3.8.51"
-	defaultPort       = int32(20128)
-	containerName     = "omniroute"
-	dataVolumeName    = "data"
-	dataMountPath     = "/app/data"
-	finalizerName     = "gateway.omniroute.ai/finalizer"
+	defaultImage   = "diegosouzapw/omniroute"
+	defaultTag     = "3.8.51"
+	defaultPort    = int32(20128)
+	containerName  = "omniroute"
+	dataVolumeName = "data"
+	dataMountPath  = "/app/data"
+	finalizerName  = "gateway.omniroute.ai/finalizer"
 )
 
 // OmniRouteReconciler reconciles a OmniRoute object
@@ -387,8 +387,8 @@ func pvcName(crName string) string {
 	return crName + "-data"
 }
 
-func boolPtr(b bool) *bool       { return &b }
-func int64Ptr(i int64) *int64    { return &i }
+func boolPtr(b bool) *bool    { return &b }
+func int64Ptr(i int64) *int64 { return &i }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OmniRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {

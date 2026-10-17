@@ -36,6 +36,14 @@ import (
 	gatewayv1alpha1 "github.com/vinaycharlie01/omniroute-operator/api/v1alpha1"
 )
 
+const (
+	testNamespace    = "default"
+	testName         = "test-omniroute"
+	testDefaultImage = "diegosouzapw/omniroute:3.8.51"
+	testMinimalName  = "minimal"
+	testSecretName   = "with-secrets"
+)
+
 func newScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(s))
@@ -55,7 +63,7 @@ func TestReconcile_NotFound(t *testing.T) {
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{
 			Name:      "nonexistent",
-			Namespace: "default",
+			Namespace: testNamespace,
 		},
 	}
 
@@ -74,8 +82,8 @@ func TestReconcile_CreatesDeploymentAndService(t *testing.T) {
 	replicas := int32(1)
 	cr := &gatewayv1alpha1.OmniRoute{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-omniroute",
-			Namespace: "default",
+			Name:      testName,
+			Namespace: testNamespace,
 		},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Image: gatewayv1alpha1.ImageSpec{
@@ -107,8 +115,8 @@ func TestReconcile_CreatesDeploymentAndService(t *testing.T) {
 
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{
-			Name:      "test-omniroute",
-			Namespace: "default",
+			Name:      testName,
+			Namespace: testNamespace,
 		},
 	}
 
@@ -122,7 +130,7 @@ func TestReconcile_CreatesDeploymentAndService(t *testing.T) {
 
 	dep := &appsv1.Deployment{}
 	err = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name: "test-omniroute", Namespace: "default",
+		Name: testName, Namespace: testNamespace,
 	}, dep)
 	if err != nil {
 		t.Fatalf("expected Deployment to be created, got error: %v", err)
@@ -133,8 +141,8 @@ func TestReconcile_CreatesDeploymentAndService(t *testing.T) {
 	}
 
 	container := dep.Spec.Template.Spec.Containers[0]
-	if container.Image != "diegosouzapw/omniroute:3.8.51" {
-		t.Errorf("Container image = %q, want %q", container.Image, "diegosouzapw/omniroute:3.8.51")
+	if container.Image != testDefaultImage {
+		t.Errorf("Container image = %q, want %q", container.Image, testDefaultImage)
 	}
 	if container.Ports[0].ContainerPort != 20128 {
 		t.Errorf("Container port = %d, want 20128", container.Ports[0].ContainerPort)
@@ -165,7 +173,7 @@ func TestReconcile_CreatesDeploymentAndService(t *testing.T) {
 
 	svc := &corev1.Service{}
 	err = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name: "test-omniroute", Namespace: "default",
+		Name: testName, Namespace: testNamespace,
 	}, svc)
 	if err != nil {
 		t.Fatalf("expected Service to be created, got error: %v", err)
@@ -185,8 +193,8 @@ func TestReconcile_UpdatesExistingDeployment(t *testing.T) {
 	replicas := int32(1)
 	cr := &gatewayv1alpha1.OmniRoute{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-omniroute",
-			Namespace: "default",
+			Name:      testName,
+			Namespace: testNamespace,
 		},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Image: gatewayv1alpha1.ImageSpec{
@@ -199,18 +207,18 @@ func TestReconcile_UpdatesExistingDeployment(t *testing.T) {
 
 	existingDep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-omniroute",
-			Namespace: "default",
-			Labels:    labelsForOmniRoute("test-omniroute"),
+			Name:      testName,
+			Namespace: testNamespace,
+			Labels:    labelsForOmniRoute(testName),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{MatchLabels: labelsForOmniRoute("test-omniroute")},
+			Selector: &metav1.LabelSelector{MatchLabels: labelsForOmniRoute(testName)},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labelsForOmniRoute("test-omniroute")},
+				ObjectMeta: metav1.ObjectMeta{Labels: labelsForOmniRoute(testName)},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
-						{Name: "omniroute", Image: "diegosouzapw/omniroute:3.8.51"},
+						{Name: "omniroute", Image: testDefaultImage},
 					},
 				},
 			},
@@ -226,7 +234,7 @@ func TestReconcile_UpdatesExistingDeployment(t *testing.T) {
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "test-omniroute", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
@@ -234,7 +242,7 @@ func TestReconcile_UpdatesExistingDeployment(t *testing.T) {
 
 	dep := &appsv1.Deployment{}
 	_ = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name: "test-omniroute", Namespace: "default",
+		Name: testName, Namespace: testNamespace,
 	}, dep)
 
 	if dep.Spec.Template.Spec.Containers[0].Image != "diegosouzapw/omniroute:4.0.0" {
@@ -248,8 +256,8 @@ func TestReconcile_DefaultValues(t *testing.T) {
 
 	cr := &gatewayv1alpha1.OmniRoute{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "minimal",
-			Namespace: "default",
+			Name:      testMinimalName,
+			Namespace: testNamespace,
 		},
 		Spec: gatewayv1alpha1.OmniRouteSpec{},
 	}
@@ -263,7 +271,7 @@ func TestReconcile_DefaultValues(t *testing.T) {
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "minimal", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testMinimalName, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
@@ -271,17 +279,17 @@ func TestReconcile_DefaultValues(t *testing.T) {
 
 	dep := &appsv1.Deployment{}
 	_ = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name: "minimal", Namespace: "default",
+		Name: testMinimalName, Namespace: testNamespace,
 	}, dep)
 
 	container := dep.Spec.Template.Spec.Containers[0]
-	if container.Image != "diegosouzapw/omniroute:3.8.51" {
-		t.Errorf("default image = %q, want diegosouzapw/omniroute:3.8.51", container.Image)
+	if container.Image != testDefaultImage {
+		t.Errorf("default image = %q, want %s", container.Image, testDefaultImage)
 	}
 
 	svc := &corev1.Service{}
 	_ = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name: "minimal", Namespace: "default",
+		Name: testMinimalName, Namespace: testNamespace,
 	}, svc)
 	if svc.Spec.Ports[0].Port != 20128 {
 		t.Errorf("default service port = %d, want 20128", svc.Spec.Ports[0].Port)
@@ -293,8 +301,8 @@ func TestReconcile_EnvVarsFromSecret(t *testing.T) {
 
 	cr := &gatewayv1alpha1.OmniRoute{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "with-secrets",
-			Namespace: "default",
+			Name:      testSecretName,
+			Namespace: testNamespace,
 		},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Credentials: gatewayv1alpha1.CredentialsSpec{
@@ -314,7 +322,7 @@ func TestReconcile_EnvVarsFromSecret(t *testing.T) {
 
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "with-secrets", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testSecretName, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
@@ -322,7 +330,7 @@ func TestReconcile_EnvVarsFromSecret(t *testing.T) {
 
 	dep := &appsv1.Deployment{}
 	_ = fakeClient.Get(context.Background(), types.NamespacedName{
-		Name: "with-secrets", Namespace: "default",
+		Name: testSecretName, Namespace: testNamespace,
 	}, dep)
 
 	envs := dep.Spec.Template.Spec.Containers[0].Env
@@ -387,11 +395,11 @@ func TestImageString(t *testing.T) {
 		spec gatewayv1alpha1.OmniRouteSpec
 		want string
 	}{
-		{"defaults", gatewayv1alpha1.OmniRouteSpec{}, "diegosouzapw/omniroute:3.8.51"},
+		{"defaults", gatewayv1alpha1.OmniRouteSpec{}, testDefaultImage},
 		{"custom", gatewayv1alpha1.OmniRouteSpec{
 			Image: gatewayv1alpha1.ImageSpec{Repository: "myrepo/omniroute", Tag: "latest"},
 		}, "myrepo/omniroute:latest"},
-		{"only tag", gatewayv1alpha1.OmniRouteSpec{
+		{"only-tag", gatewayv1alpha1.OmniRouteSpec{
 			Image: gatewayv1alpha1.ImageSpec{Tag: "4.0.0"},
 		}, "diegosouzapw/omniroute:4.0.0"},
 	}

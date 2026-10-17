@@ -27,11 +27,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+const (
+	testGroup   = "gateway.omniroute.ai"
+	testVersion = "v1alpha1"
+	testKind    = "OmniRoute"
+)
+
 func TestOmniRouteGroupVersionKind(t *testing.T) {
 	gvk := schema.GroupVersionKind{
-		Group:   "gateway.omniroute.ai",
-		Version: "v1alpha1",
-		Kind:    "OmniRoute",
+		Group:   testGroup,
+		Version: testVersion,
+		Kind:    testKind,
 	}
 	if GroupVersion.Group != gvk.Group {
 		t.Errorf("Group = %q, want %q", GroupVersion.Group, gvk.Group)
@@ -48,9 +54,9 @@ func TestSchemeRegistration(t *testing.T) {
 	}
 
 	gvk := schema.GroupVersionKind{
-		Group:   "gateway.omniroute.ai",
-		Version: "v1alpha1",
-		Kind:    "OmniRoute",
+		Group:   testGroup,
+		Version: testVersion,
+		Kind:    testKind,
 	}
 	obj, err := scheme.New(gvk)
 	if err != nil {
@@ -61,8 +67,8 @@ func TestSchemeRegistration(t *testing.T) {
 	}
 
 	listGVK := schema.GroupVersionKind{
-		Group:   "gateway.omniroute.ai",
-		Version: "v1alpha1",
+		Group:   testGroup,
+		Version: testVersion,
 		Kind:    "OmniRouteList",
 	}
 	listObj, err := scheme.New(listGVK)

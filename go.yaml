@@ -24,7 +24,8 @@ race:
 
 coverage:
   packages:
-    - ./...
+    - ./api/...
+    - ./internal/controller/
   output: coverage.out
   args:
     - "-timeout=120s"
