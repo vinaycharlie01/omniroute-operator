@@ -1,0 +1,20 @@
+cluster:
+  name: omniroute
+  servers: 1
+  agents: 0
+  ports:
+    - "20128:20128@server:0"
+  k3sArgs:
+    - "--disable=traefik@server:0"
+
+infrastructure:
+  kustomizePath: config/k3d/infrastructure
+
+helmRepos: {}
+
+releases:
+  - name: omniroute-operator
+    chart: charts/omniroute-operator
+    namespace: omniroute-system
+    wait: true
+    timeout: "120s"
