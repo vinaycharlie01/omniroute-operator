@@ -197,11 +197,8 @@ jobs:
         run: go install github.com/magefile/mage@${{ env.MAGE_VERSION }}
       - name: Install controller-gen
         run: go install sigs.k8s.io/controller-tools/cmd/controller-gen@${{ env.CONTROLLER_GEN_VERSION }}
-      - name: Run generate
-        run: mage generate
-      - name: Verify no diff
-        run: |
-          git diff --exit-code || (echo "Generated code is out of date. Run 'mage generate' and commit." && exit 1)
+      - name: Verify generated code
+        run: mage ci:verifyGenerate
 
   build:
     name: Build

@@ -14,6 +14,7 @@ package main
 
 import (
 	"github.com/magefile/mage/mg"
+	cimagex "github.com/nirantaraai/nava/mage/ci"
 	gomagex "github.com/nirantaraai/nava/mage/golang"
 	helmmagex "github.com/nirantaraai/nava/mage/helm"
 	k3dmagex "github.com/nirantaraai/nava/mage/k3d"
@@ -101,3 +102,15 @@ func (K3d) Status() error { return k3dmagex.Status() }
 
 // Clean removes build artefacts (config: operator.yaml).
 func Clean() error { return operatormagex.CleanFromConfig() }
+
+// CI namespace for continuous integration targets.
+type CI mg.Namespace
+
+// VerifyGenerate runs code generation and fails if the working tree has changes.
+func (CI) VerifyGenerate() error { return cimagex.VerifyGeneratedMage("generate") }
+
+// VerifyModTidy runs go mod tidy and fails if go.mod/go.sum change.
+func (CI) VerifyModTidy() error { return cimagex.VerifyModTidy() }
+
+// Check runs go vet + mod tidy verification.
+func (CI) Check() error { return cimagex.Check("mage") }

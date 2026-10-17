@@ -142,4 +142,4 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/nirantaraai/nava => github.com/vinaycharlie01/nava v0.0.0-20261017173830-70602f804445
+replace github.com/nirantaraai/nava => github.com/vinaycharlie01/nava v0.0.0-20261017174624-278a2ddfcbcd
