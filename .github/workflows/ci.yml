@@ -8,7 +8,7 @@ on:
     branches: ["main"]
 
 env:
-  GO_VERSION: "1.25"
+  GO_VERSION: "1.27"
   MAGE_VERSION: "v1.17.2"
   CONTROLLER_GEN_VERSION: "v0.18.0"
   REGISTRY: ghcr.io
