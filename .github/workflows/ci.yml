@@ -105,6 +105,29 @@ jobs:
           files: coverage.out
           fail_ci_if_error: false
 
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Cache mage
+        id: cache-mage
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/mage
+          key: mage-${{ runner.os }}-${{ env.MAGE_VERSION }}
+      - name: Install mage
+        if: steps.cache-mage.outputs.cache-hit != 'true'
+        run: go install github.com/magefile/mage@${{ env.MAGE_VERSION }}
+      - name: Run integration tests
+        run: mage integrationTest
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest
