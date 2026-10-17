@@ -1,0 +1,7 @@
+generate:
+  helmCRDDir: charts/omniroute-operator/crds
+
+clean:
+  paths:
+    - bin/manager
+    - dist

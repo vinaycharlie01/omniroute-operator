@@ -13,9 +13,6 @@
 package main
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/magefile/mage/mg"
 	gomagex "github.com/nirantaraai/nava/mage/golang"
 	helmmagex "github.com/nirantaraai/nava/mage/helm"
@@ -27,64 +24,58 @@ func init() {
 	_ = gomagex.LoadConfig("go.yaml")
 	_ = helmmagex.LoadConfig("helm.yaml")
 	_ = k3dmagex.LoadConfig("k3d.yaml")
+	_ = operatormagex.LoadConfig("operator.yaml")
 }
 
-// Build compiles the operator binary (config: go.yaml → build).
+// Build compiles the operator binary (config: go.yaml).
 func Build() error { return gomagex.Build() }
 
-// Test runs the unit test suite (config: go.yaml → test).
+// Test runs the unit test suite (config: go.yaml).
 func Test() error { return gomagex.Test() }
 
-// Lint runs golangci-lint (config: go.yaml → lint).
+// Lint runs golangci-lint (config: go.yaml).
 func Lint() error { return gomagex.Lint() }
 
-// Vet runs go vet (config: go.yaml → vet).
+// Vet runs go vet (config: go.yaml).
 func Vet() error { return gomagex.Vet() }
 
-// Setup downloads Go modules (config: go.yaml → setup).
+// Setup downloads Go modules (config: go.yaml).
 func Setup() error { return gomagex.Setup() }
 
-// Race runs tests with race detection (config: go.yaml → race).
+// Race runs tests with race detection (config: go.yaml).
 func Race() error { return gomagex.Race() }
 
-// Coverage runs tests with coverage profiling (config: go.yaml → coverage).
+// Coverage runs tests with coverage profiling (config: go.yaml).
 func Coverage() error { return gomagex.Coverage() }
 
-// Bench runs benchmarks (config: go.yaml → bench).
+// Bench runs benchmarks (config: go.yaml).
 func Bench() error { return gomagex.Bench() }
 
 // Govulncheck runs govulncheck for vulnerability scanning.
 func Govulncheck() error { return gomagex.Govulncheck() }
 
-// IntegrationTest runs integration tests (config: go.yaml → integration).
+// IntegrationTest runs integration tests (config: go.yaml).
 func IntegrationTest() error { return gomagex.Integration() }
 
-// BuildLinux cross-compiles for linux/amd64 and linux/arm64 (config: go.yaml → crossBuild).
+// BuildLinux cross-compiles for linux/amd64 and linux/arm64 (config: go.yaml).
 func BuildLinux() error { return gomagex.CrossBuild() }
 
-// Generate runs all code generation (DeepCopy + CRD/RBAC manifests) and syncs CRDs to Helm.
-func Generate() error {
-	if err := operatormagex.GenerateCode(""); err != nil {
-		return err
-	}
-	return operatormagex.GenerateAndSync("charts/omniroute-operator/crds")
-}
+// Generate runs all code generation (DeepCopy + CRD/RBAC manifests) and syncs CRDs to Helm (config: operator.yaml).
+func Generate() error { return operatormagex.GenerateFromConfig() }
 
 // GenerateManifests generates CRD and RBAC manifests using controller-gen.
-func GenerateManifests() error {
-	return operatormagex.GenerateAndSync("charts/omniroute-operator/crds")
-}
+func GenerateManifests() error { return operatormagex.GenerateManifests() }
 
 // GenerateDeepCopy generates DeepCopy implementations for API types.
 func GenerateDeepCopy() error { return operatormagex.GenerateCode("") }
 
-// HelmLint runs helm lint on the operator chart (config: helm.yaml → lint).
+// HelmLint runs helm lint on the operator chart (config: helm.yaml).
 func HelmLint() error { return helmmagex.Lint() }
 
-// HelmPackage packages the operator Helm chart (config: helm.yaml → package).
+// HelmPackage packages the operator Helm chart (config: helm.yaml).
 func HelmPackage() error { return helmmagex.Package() }
 
-// HelmPush packages and pushes the Helm chart to the OCI registry (config: helm.yaml → push).
+// HelmPush packages and pushes the Helm chart to the OCI registry (config: helm.yaml).
 func HelmPush() error { return helmmagex.Push() }
 
 // K3d namespace for local cluster operations (config: k3d.yaml).
@@ -108,11 +99,5 @@ func (K3d) Bootstrap() error { return k3dmagex.Bootstrap() }
 // Status shows the cluster state.
 func (K3d) Status() error { return k3dmagex.Status() }
 
-// Clean removes build artefacts.
-func Clean() error {
-	fmt.Println("cleaning build artifacts")
-	if err := os.Remove("bin/manager"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return os.RemoveAll("dist")
-}
+// Clean removes build artefacts (config: operator.yaml).
+func Clean() error { return operatormagex.CleanFromConfig() }
