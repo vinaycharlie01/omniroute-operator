@@ -5,16 +5,24 @@ A Kubernetes Operator built with [Kubebuilder](https://kubebuilder.io/) to deplo
 self-hosted Kubernetes environments.
 
 The operator watches `OmniRoute` custom resources and reconciles Deployments, Services,
-and PersistentVolumeClaims so you get a fully managed OmniRoute instance with a single
-`kubectl apply`.
+PersistentVolumeClaims, and Ingresses so you get a fully managed OmniRoute instance with a
+single `kubectl apply`.
 
 ## Features
 
 - Declarative OmniRoute lifecycle via a Kubernetes CRD (`gateway.omniroute.ai/v1alpha1`)
-- Automatic Deployment, Service, and PVC reconciliation
+- Automatic Deployment, Service, PVC, and Ingress reconciliation
 - Credentials injection from existing Secrets
+- Configuration injection from existing ConfigMaps (envFrom)
+- Auto-derived `NODE_OPTIONS` from memory limits (prevents OOM kills)
+- Configurable health / readiness / startup probes (defaults to OmniRoute's `/api/monitoring/health`)
+- Redis integration for rate limiting (URL or Secret-backed)
+- Database encryption at rest (STORAGE_ENCRYPTION_KEY from Secret)
+- Ingress resource management with TLS, className, and annotations
+- Reverse proxy support via `basePath` (OMNIROUTE_BASE_PATH)
+- Service annotations for cloud provider integrations (e.g., AWS NLB)
+- Additional environment variables via `spec.env`
 - Configurable persistence (SQLite data directory)
-- Health / readiness / startup probes
 - Leader election for high-availability operator deployments
 - Multi-arch container images (linux/amd64, linux/arm64)
 - Helm chart for operator installation
@@ -74,7 +82,19 @@ kubectl create secret generic omniroute-secrets \
   --from-literal=INITIAL_PASSWORD="changeme"
 ```
 
-### 3. Deploy an OmniRoute instance
+### 3. (Optional) Create a ConfigMap for environment configuration
+
+All keys in the referenced ConfigMap are injected as environment variables via `envFrom`:
+
+```bash
+kubectl create configmap omniroute-config \
+  --namespace ai-platform \
+  --from-literal=PORT=20128 \
+  --from-literal=APP_LOG_LEVEL=info \
+  --from-literal=REQUIRE_API_KEY=false
+```
+
+### 4. Deploy an OmniRoute instance
 
 ```bash
 kubectl apply -f config/samples/gateway_v1alpha1_omniroute.yaml
@@ -106,6 +126,8 @@ spec:
       memory: 1Gi
   credentials:
     existingSecret: omniroute-secrets
+  config:
+    existingConfigMap: omniroute-config
   persistence:
     enabled: true
     size: 1Gi
@@ -119,7 +141,7 @@ kubectl wait --for=condition=available deployment/omniroute \
   --namespace ai-platform --timeout=120s
 ```
 
-### 4. Access the OmniRoute UI
+### 5. Access the OmniRoute UI
 
 **Option A — Port forward (works on any cluster)**
 
@@ -158,12 +180,26 @@ kubectl get svc omniroute -n ai-platform -w
 # Wait for EXTERNAL-IP, then open http://<EXTERNAL-IP>:20128
 ```
 
-### 5. Log in
+**Option D — Ingress (production)**
+
+```yaml
+spec:
+  ingress:
+    enabled: true
+    className: nginx
+    host: omniroute.example.com
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls:
+      secretName: omniroute-tls
+```
+
+### 6. Log in
 
 Use the password set in `INITIAL_PASSWORD` (default: `changeme`).
 The dashboard provides access to provider management, routing configuration, and monitoring.
 
-### 6. Use the OmniRoute API
+### 7. Use the OmniRoute API
 
 OmniRoute exposes an OpenAI-compatible API:
 
@@ -176,7 +212,7 @@ curl http://localhost:20128/v1/chat/completions \
   }'
 ```
 
-### 7. Teardown
+### 8. Teardown
 
 ```bash
 kubectl delete omniroute omniroute -n ai-platform
@@ -241,22 +277,94 @@ helm install omniroute-operator charts/omniroute-operator \
 
 ## CRD Reference
 
+### Core
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `spec.image.repository` | string | `diegosouzapw/omniroute` | OmniRoute container image |
 | `spec.image.tag` | string | `3.8.51` | Image tag |
 | `spec.image.pullPolicy` | string | `IfNotPresent` | Image pull policy |
 | `spec.replicas` | int | `1` | Pod count (max 1 — SQLite single-writer) |
+| `spec.resources` | ResourceRequirements | — | CPU/memory requests and limits |
+| `spec.env` | []EnvVar | — | Additional environment variables |
+
+### Service
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `spec.service.type` | string | `ClusterIP` | Service type: ClusterIP, NodePort, LoadBalancer |
 | `spec.service.port` | int | `20128` | Service port |
-| `spec.resources` | ResourceRequirements | — | CPU/memory requests and limits |
+| `spec.service.annotations` | map[string]string | — | Service annotations (e.g., for AWS NLB) |
+
+### Configuration & Credentials
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `spec.config.existingConfigMap` | string | — | ConfigMap with OmniRoute env vars (injected via envFrom) |
 | `spec.credentials.existingSecret` | string | — | Secret with JWT_SECRET, API_KEY_SECRET, INITIAL_PASSWORD |
-| `spec.config.existingConfigMap` | string | — | ConfigMap with OmniRoute env vars |
+
+### Persistence
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `spec.persistence.enabled` | bool | `true` | Create a PVC for the data directory |
 | `spec.persistence.size` | string | `1Gi` | PVC storage size |
 | `spec.persistence.storageClass` | string | cluster default | StorageClass name |
 | `spec.persistence.accessMode` | string | `ReadWriteOnce` | PVC access mode |
-| `spec.env` | []EnvVar | — | Additional environment variables |
+
+### Health Probes
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `spec.probes.livenessPath` | string | `/api/monitoring/health` | HTTP path for liveness probe |
+| `spec.probes.readinessPath` | string | `/api/monitoring/health` | HTTP path for readiness probe |
+| `spec.probes.startupPath` | string | `/api/monitoring/health` | HTTP path for startup probe |
+
+The operator auto-configures all three probes with sensible defaults (initialDelaySeconds, periodSeconds, failureThreshold). All paths default to OmniRoute's health endpoint.
+
+### Ingress
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `spec.ingress.enabled` | bool | `false` | Create an Ingress resource |
+| `spec.ingress.className` | string | — | IngressClass name (e.g., `nginx`) |
+| `spec.ingress.host` | string | — | Hostname for the Ingress rule |
+| `spec.ingress.tls.secretName` | string | — | TLS Secret name |
+| `spec.ingress.annotations` | map[string]string | — | Ingress annotations |
+
+### Redis (Rate Limiting)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `spec.redis.url` | string | — | Redis connection URL (e.g., `redis://redis:6379`) |
+| `spec.redis.existingSecret` | string | — | Secret containing a `REDIS_URL` key |
+| `spec.redis.keyPrefix` | string | — | Redis key namespace prefix |
+
+### Encryption (Database at Rest)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `spec.encryption.existingSecret` | string | — | Secret containing `STORAGE_ENCRYPTION_KEY` |
+| `spec.encryption.keyVersion` | string | — | Encryption key version (for key rotation) |
+
+### Reverse Proxy
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `spec.basePath` | string | — | Sets `OMNIROUTE_BASE_PATH` for reverse proxy deployments (e.g., `/omniroute`) |
+
+### Auto-Derived Environment Variables
+
+The operator automatically sets the following based on the CR spec:
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `NODE_OPTIONS` | `spec.resources.limits.memory` | `--max-old-space-size=<75% of memory limit in MB>` — prevents Node.js OOM kills |
+| `OMNIROUTE_BASE_PATH` | `spec.basePath` | Reverse proxy base path |
+| `REDIS_URL` | `spec.redis.url` or `spec.redis.existingSecret` | Redis connection URL |
+| `REDIS_KEY_PREFIX` | `spec.redis.keyPrefix` | Redis key namespace prefix |
+| `STORAGE_ENCRYPTION_KEY` | `spec.encryption.existingSecret` | Database encryption key (from Secret) |
+| `STORAGE_ENCRYPTION_KEY_VERSION` | `spec.encryption.keyVersion` | Encryption key version |
 
 ## Development
 

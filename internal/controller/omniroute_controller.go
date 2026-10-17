@@ -19,9 +19,11 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,13 +39,15 @@ import (
 )
 
 const (
-	defaultImage   = "diegosouzapw/omniroute"
-	defaultTag     = "3.8.51"
-	defaultPort    = int32(20128)
-	containerName  = "omniroute"
-	dataVolumeName = "data"
-	dataMountPath  = "/app/data"
-	finalizerName  = "gateway.omniroute.ai/finalizer"
+	defaultImage        = "diegosouzapw/omniroute"
+	defaultTag          = "3.8.51"
+	defaultPort         = int32(20128)
+	containerName       = "omniroute"
+	dataVolumeName      = "data"
+	dataMountPath       = "/app/data"
+	finalizerName       = "gateway.omniroute.ai/finalizer"
+	defaultHealthPath   = "/api/monitoring/health"
+	defaultLivenessPath = "/api/monitoring/health"
 )
 
 // OmniRouteReconciler reconciles a OmniRoute object
@@ -60,6 +64,7 @@ type OmniRouteReconciler struct {
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 
 func (r *OmniRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -117,6 +122,12 @@ func (r *OmniRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	if err := r.reconcileIngress(ctx, omniroute); err != nil {
+		r.setCondition(omniroute, gatewayv1alpha1.ConditionDegraded, metav1.ConditionTrue, "IngressFailed", err.Error())
+		_ = r.statusUpdate(ctx, omniroute)
+		return ctrl.Result{}, err
+	}
+
 	// Update status from the Deployment.
 	r.updateStatusFromDeployment(ctx, omniroute)
 
@@ -145,8 +156,6 @@ func (r *OmniRouteReconciler) reconcilePVC(ctx context.Context, cr *gatewayv1alp
 		return err
 	}
 
-	// PVCs are mostly immutable after creation (storageClass, accessModes).
-	// Only storage size expansion is possible if the StorageClass allows it.
 	return nil
 }
 
@@ -234,6 +243,96 @@ func (r *OmniRouteReconciler) reconcileService(ctx context.Context, cr *gatewayv
 	return r.Update(ctx, existing)
 }
 
+func (r *OmniRouteReconciler) reconcileIngress(ctx context.Context, cr *gatewayv1alpha1.OmniRoute) error {
+	log := logf.FromContext(ctx)
+
+	if cr.Spec.Ingress == nil || !cr.Spec.Ingress.Enabled {
+		// Delete Ingress if it exists and is no longer desired.
+		existing := &networkingv1.Ingress{}
+		err := r.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, existing)
+		if err == nil {
+			log.Info("Deleting Ingress (no longer enabled)", "name", existing.Name)
+			return r.Delete(ctx, existing)
+		}
+		if !errors.IsNotFound(err) {
+			return err
+		}
+		return nil
+	}
+
+	desired := r.buildIngress(cr)
+	if err := controllerutil.SetControllerReference(cr, desired, r.Scheme); err != nil {
+		return fmt.Errorf("setting controller reference on Ingress: %w", err)
+	}
+
+	existing := &networkingv1.Ingress{}
+	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, existing)
+	if errors.IsNotFound(err) {
+		log.Info("Creating Ingress", "name", desired.Name)
+		return r.Create(ctx, desired)
+	}
+	if err != nil {
+		return err
+	}
+
+	existing.Spec = desired.Spec
+	existing.Annotations = desired.Annotations
+	log.Info("Updating Ingress", "name", existing.Name)
+	return r.Update(ctx, existing)
+}
+
+func (r *OmniRouteReconciler) buildIngress(cr *gatewayv1alpha1.OmniRoute) *networkingv1.Ingress {
+	labels := labelsForOmniRoute(cr.Name)
+	port := servicePort(cr)
+	pathType := networkingv1.PathTypePrefix
+
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        cr.Name,
+			Namespace:   cr.Namespace,
+			Labels:      labels,
+			Annotations: cr.Spec.Ingress.Annotations,
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: cr.Spec.Ingress.ClassName,
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: cr.Spec.Ingress.Host,
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: &pathType,
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: cr.Name,
+											Port: networkingv1.ServiceBackendPort{
+												Number: port,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if cr.Spec.Ingress.TLS != nil && cr.Spec.Ingress.TLS.SecretName != "" {
+		ingress.Spec.TLS = []networkingv1.IngressTLS{
+			{
+				Hosts:      []string{cr.Spec.Ingress.Host},
+				SecretName: cr.Spec.Ingress.TLS.SecretName,
+			},
+		}
+	}
+
+	return ingress
+}
+
 func (r *OmniRouteReconciler) buildDeployment(cr *gatewayv1alpha1.OmniRoute) *appsv1.Deployment {
 	labels := labelsForOmniRoute(cr.Name)
 	replicas := int32(1)
@@ -243,6 +342,8 @@ func (r *OmniRouteReconciler) buildDeployment(cr *gatewayv1alpha1.OmniRoute) *ap
 
 	image := imageString(cr)
 	port := servicePort(cr)
+
+	livenessPath, readinessPath, startupPath := probePaths(cr)
 
 	container := corev1.Container{
 		Name:  containerName,
@@ -254,23 +355,24 @@ func (r *OmniRouteReconciler) buildDeployment(cr *gatewayv1alpha1.OmniRoute) *ap
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
-		Env: buildEnvVars(cr, port),
+		Env:     buildEnvVars(cr, port),
+		EnvFrom: buildEnvFrom(cr),
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path: "/livez",
+					Path: livenessPath,
 					Port: intstr.FromInt32(port),
 				},
 			},
-			InitialDelaySeconds: 10,
-			PeriodSeconds:       15,
+			InitialDelaySeconds: 15,
+			PeriodSeconds:       30,
 			TimeoutSeconds:      5,
 			FailureThreshold:    3,
 		},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path: "/healthz",
+					Path: readinessPath,
 					Port: intstr.FromInt32(port),
 				},
 			},
@@ -282,7 +384,7 @@ func (r *OmniRouteReconciler) buildDeployment(cr *gatewayv1alpha1.OmniRoute) *ap
 		StartupProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path: "/healthz",
+					Path: startupPath,
 					Port: intstr.FromInt32(port),
 				},
 			},
@@ -346,11 +448,12 @@ func (r *OmniRouteReconciler) buildService(cr *gatewayv1alpha1.OmniRoute) *corev
 		svcType = cr.Spec.Service.Type
 	}
 
-	return &corev1.Service{
+	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
-			Namespace: cr.Namespace,
-			Labels:    labels,
+			Name:        cr.Name,
+			Namespace:   cr.Namespace,
+			Labels:      labels,
+			Annotations: cr.Spec.Service.Annotations,
 		},
 		Spec: corev1.ServiceSpec{
 			Type:     svcType,
@@ -365,6 +468,28 @@ func (r *OmniRouteReconciler) buildService(cr *gatewayv1alpha1.OmniRoute) *corev
 			},
 		},
 	}
+
+	return svc
+}
+
+func probePaths(cr *gatewayv1alpha1.OmniRoute) (liveness, readiness, startup string) {
+	liveness = defaultLivenessPath
+	readiness = defaultHealthPath
+	startup = defaultHealthPath
+
+	if cr.Spec.Probes != nil {
+		if cr.Spec.Probes.LivenessPath != "" {
+			liveness = cr.Spec.Probes.LivenessPath
+		}
+		if cr.Spec.Probes.ReadinessPath != "" {
+			readiness = cr.Spec.Probes.ReadinessPath
+		}
+		if cr.Spec.Probes.StartupPath != "" {
+			startup = cr.Spec.Probes.StartupPath
+		}
+	}
+
+	return
 }
 
 func buildEnvVars(cr *gatewayv1alpha1.OmniRoute, port int32) []corev1.EnvVar {
@@ -375,21 +500,30 @@ func buildEnvVars(cr *gatewayv1alpha1.OmniRoute, port int32) []corev1.EnvVar {
 		{Name: "REQUIRE_API_KEY", Value: "true"},
 	}
 
-	if cr.Spec.Config.ExistingConfigMap != "" {
+	// Auto-derive NODE_OPTIONS from memory limits to prevent OOM kills.
+	if cr.Spec.Resources.Limits != nil {
+		if memLimit, ok := cr.Spec.Resources.Limits[corev1.ResourceMemory]; ok {
+			memMB := memLimit.Value() / (1024 * 1024)
+			// Use 75% of the memory limit for the V8 heap.
+			heapMB := memMB * 75 / 100
+			if heapMB > 0 {
+				envs = append(envs, corev1.EnvVar{
+					Name:  "NODE_OPTIONS",
+					Value: "--max-old-space-size=" + strconv.FormatInt(heapMB, 10),
+				})
+			}
+		}
+	}
+
+	// Set OMNIROUTE_BASE_PATH if configured.
+	if cr.Spec.BasePath != "" {
 		envs = append(envs, corev1.EnvVar{
-			Name: "OMNIROUTE_CONFIG_LOADED",
-			ValueFrom: &corev1.EnvVarSource{
-				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cr.Spec.Config.ExistingConfigMap,
-					},
-					Key:      "PORT",
-					Optional: boolPtr(true),
-				},
-			},
+			Name:  "OMNIROUTE_BASE_PATH",
+			Value: cr.Spec.BasePath,
 		})
 	}
 
+	// Inject credentials from existing Secret.
 	if cr.Spec.Credentials.ExistingSecret != "" {
 		secretKeys := []string{"JWT_SECRET", "API_KEY_SECRET", "INITIAL_PASSWORD"}
 		for _, key := range secretKeys {
@@ -407,8 +541,75 @@ func buildEnvVars(cr *gatewayv1alpha1.OmniRoute, port int32) []corev1.EnvVar {
 		}
 	}
 
+	// Redis configuration.
+	if cr.Spec.Redis != nil {
+		if cr.Spec.Redis.ExistingSecret != "" {
+			envs = append(envs, corev1.EnvVar{
+				Name: "REDIS_URL",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: cr.Spec.Redis.ExistingSecret,
+						},
+						Key: "REDIS_URL",
+					},
+				},
+			})
+		} else if cr.Spec.Redis.URL != "" {
+			envs = append(envs, corev1.EnvVar{
+				Name:  "REDIS_URL",
+				Value: cr.Spec.Redis.URL,
+			})
+		}
+		if cr.Spec.Redis.KeyPrefix != "" {
+			envs = append(envs, corev1.EnvVar{
+				Name:  "REDIS_KEY_PREFIX",
+				Value: cr.Spec.Redis.KeyPrefix,
+			})
+		}
+	}
+
+	// Database encryption.
+	if cr.Spec.Encryption != nil {
+		if cr.Spec.Encryption.ExistingSecret != "" {
+			envs = append(envs, corev1.EnvVar{
+				Name: "STORAGE_ENCRYPTION_KEY",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: cr.Spec.Encryption.ExistingSecret,
+						},
+						Key: "STORAGE_ENCRYPTION_KEY",
+					},
+				},
+			})
+		}
+		if cr.Spec.Encryption.KeyVersion != "" {
+			envs = append(envs, corev1.EnvVar{
+				Name:  "STORAGE_ENCRYPTION_KEY_VERSION",
+				Value: cr.Spec.Encryption.KeyVersion,
+			})
+		}
+	}
+
 	envs = append(envs, cr.Spec.Env...)
 	return envs
+}
+
+func buildEnvFrom(cr *gatewayv1alpha1.OmniRoute) []corev1.EnvFromSource {
+	if cr.Spec.Config.ExistingConfigMap == "" {
+		return nil
+	}
+	return []corev1.EnvFromSource{
+		{
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: cr.Spec.Config.ExistingConfigMap,
+				},
+				Optional: boolPtr(true),
+			},
+		},
+	}
 }
 
 func buildVolumes(cr *gatewayv1alpha1.OmniRoute) ([]corev1.Volume, []corev1.VolumeMount) {
@@ -532,6 +733,7 @@ func (r *OmniRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
+		Owns(&networkingv1.Ingress{}).
 		Named("omniroute").
 		Complete(r)
 }

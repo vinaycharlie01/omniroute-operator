@@ -53,13 +53,19 @@ spec:
           spec:
             description: OmniRouteSpec defines the desired state of OmniRoute.
             properties:
+              basePath:
+                description: BasePath sets the OMNIROUTE_BASE_PATH for reverse proxy
+                  deployments (e.g. "/omniroute").
+                type: string
               config:
-                description: Config references an existing ConfigMap containing OmniRoute
-                  environment variables.
+                description: |-
+                  Config references an existing ConfigMap containing OmniRoute environment variables.
+                  All keys in the ConfigMap are injected as environment variables via envFrom.
                 properties:
                   existingConfigMap:
-                    description: ExistingConfigMap is the name of an existing ConfigMap
-                      with OmniRoute env vars.
+                    description: |-
+                      ExistingConfigMap is the name of an existing ConfigMap with OmniRoute env vars.
+                      All keys are injected as environment variables via envFrom.
                     type: string
                 type: object
               credentials:
@@ -71,6 +77,19 @@ spec:
                     description: |-
                       ExistingSecret is the name of an existing Secret containing JWT_SECRET,
                       API_KEY_SECRET, and INITIAL_PASSWORD keys.
+                      Additional keys like STORAGE_ENCRYPTION_KEY are also injected if present.
+                    type: string
+                type: object
+              encryption:
+                description: Encryption configures database encryption at rest.
+                properties:
+                  existingSecret:
+                    description: ExistingSecret is the name of a Secret containing
+                      a STORAGE_ENCRYPTION_KEY key.
+                    type: string
+                  keyVersion:
+                    description: KeyVersion is the encryption key version for key
+                      rotation.
                     type: string
                 type: object
               env:
@@ -212,6 +231,32 @@ spec:
                     description: Tag is the container image tag.
                     type: string
                 type: object
+              ingress:
+                description: Ingress configures an optional Ingress resource for external
+                  access.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: Annotations are additional annotations for the Ingress.
+                    type: object
+                  className:
+                    description: ClassName is the IngressClass to use.
+                    type: string
+                  enabled:
+                    description: Enabled controls whether an Ingress resource is created.
+                    type: boolean
+                  host:
+                    description: Host is the hostname for the Ingress rule.
+                    type: string
+                  tls:
+                    description: TLS configures TLS for the Ingress.
+                    properties:
+                      secretName:
+                        description: SecretName is the name of the TLS Secret.
+                        type: string
+                    type: object
+                type: object
               persistence:
                 description: Persistence configures the PersistentVolumeClaim for
                   OmniRoute's SQLite data directory.
@@ -241,6 +286,39 @@ spec:
                     description: |-
                       StorageClass is the name of the StorageClass for the PVC.
                       Empty string uses the cluster default.
+                    type: string
+                type: object
+              probes:
+                description: Probes configures the health check probes for the OmniRoute
+                  container.
+                properties:
+                  livenessPath:
+                    default: /api/monitoring/health
+                    description: LivenessPath is the HTTP path for the liveness probe.
+                    type: string
+                  readinessPath:
+                    default: /api/monitoring/health
+                    description: ReadinessPath is the HTTP path for the readiness
+                      probe.
+                    type: string
+                  startupPath:
+                    default: /api/monitoring/health
+                    description: StartupPath is the HTTP path for the startup probe.
+                    type: string
+                type: object
+              redis:
+                description: Redis configures an optional Redis connection for rate
+                  limiting.
+                properties:
+                  existingSecret:
+                    description: ExistingSecret is the name of a Secret containing
+                      a REDIS_URL key.
+                    type: string
+                  keyPrefix:
+                    description: KeyPrefix is the Redis key namespace prefix.
+                    type: string
+                  url:
+                    description: URL is the Redis connection URL (e.g. redis://redis:6379).
                     type: string
                 type: object
               replicas:
@@ -315,6 +393,12 @@ spec:
               service:
                 description: Service configures the Kubernetes Service for OmniRoute.
                 properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: Annotations are additional annotations to add to
+                      the Service.
+                    type: object
                   port:
                     default: 20128
                     description: Port is the Service port. Defaults to 20128 (OmniRoute's
