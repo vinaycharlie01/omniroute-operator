@@ -1,0 +1,26 @@
+OmniRoute Operator has been installed.
+
+1. The CRD has been installed. Verify with:
+   kubectl get crd omniroutes.gateway.omniroute.ai
+
+2. Create an OmniRoute instance:
+   kubectl apply -f - <<EOF
+   apiVersion: gateway.omniroute.ai/v1alpha1
+   kind: OmniRoute
+   metadata:
+     name: omniroute
+     namespace: {{ .Release.Namespace }}
+   spec:
+     image:
+       repository: diegosouzapw/omniroute
+       tag: "3.8.51"
+     replicas: 1
+     service:
+       type: ClusterIP
+       port: 20128
+     credentials:
+       existingSecret: omniroute-secrets
+   EOF
+
+3. Check operator logs:
+   kubectl logs -l control-plane=controller-manager -n {{ .Release.Namespace }}

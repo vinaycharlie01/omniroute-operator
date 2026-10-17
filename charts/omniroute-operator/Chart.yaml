@@ -1,0 +1,17 @@
+apiVersion: v2
+name: omniroute-operator
+description: Kubernetes operator for managing OmniRoute AI gateway instances
+type: application
+version: 0.1.0
+appVersion: "3.8.51"
+kubeVersion: ">=1.28.0-0"
+keywords:
+  - omniroute
+  - ai-gateway
+  - kubernetes-operator
+  - llm-proxy
+home: https://github.com/vinaycharlie01/omniroute-operator
+sources:
+  - https://github.com/vinaycharlie01/omniroute-operator
+maintainers:
+  - name: vinaycharlie01

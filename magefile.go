@@ -68,7 +68,10 @@ func GenerateDeepCopy() error { return generateDeepCopy() }
 // Clean removes build artefacts.
 func Clean() error {
 	fmt.Println("cleaning bin/manager")
-	return os.Remove("bin/manager")
+	if err := os.Remove("bin/manager"); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func generateManifests() error {
@@ -86,7 +89,24 @@ func generateManifests() error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	fmt.Println("Generating CRD and RBAC manifests...")
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return syncCRDToHelm()
+}
+
+func syncCRDToHelm() error {
+	src := "config/crd/bases/gateway.omniroute.ai_omniroutes.yaml"
+	dst := "charts/omniroute-operator/crds/gateway.omniroute.ai_omniroutes.yaml"
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("read CRD: %w", err)
+	}
+	if err := os.MkdirAll("charts/omniroute-operator/crds", 0o755); err != nil {
+		return err
+	}
+	fmt.Println("Syncing CRD to Helm chart...")
+	return os.WriteFile(dst, data, 0o644)
 }
 
 func generateDeepCopy() error {
