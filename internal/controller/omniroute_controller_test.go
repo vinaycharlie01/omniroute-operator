@@ -31,6 +31,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	gatewayv1alpha1 "github.com/vinaycharlie01/omniroute-operator/api/v1alpha1"
@@ -355,6 +356,220 @@ func TestReconcile_EnvVarsFromSecret(t *testing.T) {
 	}
 	if !customFound {
 		t.Error("expected custom env var CUSTOM_VAR=custom-value, not found")
+	}
+}
+
+func TestReconcile_CreatesPVC(t *testing.T) {
+	scheme := newScheme()
+
+	replicas := int32(1)
+	storageClass := "my-storage-class"
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testName,
+			Namespace: testNamespace,
+		},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Replicas: &replicas,
+			Persistence: gatewayv1alpha1.PersistenceSpec{
+				StorageClass: &storageClass,
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		Build()
+
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	err = fakeClient.Get(context.Background(), types.NamespacedName{
+		Name: testName + "-data", Namespace: testNamespace,
+	}, pvc)
+	if err != nil {
+		t.Fatalf("expected PVC to be created, got error: %v", err)
+	}
+
+	if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName != "my-storage-class" {
+		t.Errorf("PVC storageClassName = %v, want my-storage-class", pvc.Spec.StorageClassName)
+	}
+	if pvc.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+		t.Errorf("PVC accessMode = %v, want ReadWriteOnce", pvc.Spec.AccessModes[0])
+	}
+	storageReq := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	if storageReq.String() != "1Gi" {
+		t.Errorf("PVC size = %s, want 1Gi", storageReq.String())
+	}
+}
+
+func TestReconcile_PVCDefaultStorageClass(t *testing.T) {
+	scheme := newScheme()
+
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testName,
+			Namespace: testNamespace,
+		},
+		Spec: gatewayv1alpha1.OmniRouteSpec{},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		Build()
+
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	err = fakeClient.Get(context.Background(), types.NamespacedName{
+		Name: testName + "-data", Namespace: testNamespace,
+	}, pvc)
+	if err != nil {
+		t.Fatalf("expected PVC to be created, got error: %v", err)
+	}
+
+	if pvc.Spec.StorageClassName != nil {
+		t.Errorf("PVC storageClassName = %v, want nil (cluster default)", pvc.Spec.StorageClassName)
+	}
+}
+
+func TestReconcile_NoPVCWhenPersistenceDisabled(t *testing.T) {
+	scheme := newScheme()
+
+	disabled := false
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testName,
+			Namespace: testNamespace,
+		},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Persistence: gatewayv1alpha1.PersistenceSpec{
+				Enabled: &disabled,
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		Build()
+
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	err = fakeClient.Get(context.Background(), types.NamespacedName{
+		Name: testName + "-data", Namespace: testNamespace,
+	}, pvc)
+	if !errors.IsNotFound(err) {
+		t.Error("expected PVC to NOT be created when persistence is disabled")
+	}
+}
+
+func TestReconcile_Finalizer(t *testing.T) {
+	scheme := newScheme()
+
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testName,
+			Namespace: testNamespace,
+		},
+		Spec: gatewayv1alpha1.OmniRouteSpec{},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		Build()
+
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	updated := &gatewayv1alpha1.OmniRoute{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{
+		Name: testName, Namespace: testNamespace,
+	}, updated)
+
+	if !controllerutil.ContainsFinalizer(updated, finalizerName) {
+		t.Error("expected finalizer to be added")
+	}
+}
+
+func TestReconcile_StatusConditions(t *testing.T) {
+	scheme := newScheme()
+
+	replicas := int32(1)
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testName,
+			Namespace: testNamespace,
+		},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Replicas: &replicas,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		Build()
+
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	updated := &gatewayv1alpha1.OmniRoute{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{
+		Name: testName, Namespace: testNamespace,
+	}, updated)
+
+	if len(updated.Status.Conditions) == 0 {
+		t.Fatal("expected status conditions to be set")
+	}
+
+	var hasProgressing bool
+	for _, c := range updated.Status.Conditions {
+		if c.Type == string(gatewayv1alpha1.ConditionProgressing) {
+			hasProgressing = true
+		}
+	}
+	if !hasProgressing {
+		t.Error("expected Progressing condition to be set")
 	}
 }
 

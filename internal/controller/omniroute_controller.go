@@ -73,15 +73,117 @@ func (r *OmniRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	// Handle finalizer for cleanup.
+	if omniroute.DeletionTimestamp != nil {
+		if controllerutil.ContainsFinalizer(omniroute, finalizerName) {
+			log.Info("Running finalizer cleanup")
+			controllerutil.RemoveFinalizer(omniroute, finalizerName)
+			if err := r.Update(ctx, omniroute); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(omniroute, finalizerName) {
+		controllerutil.AddFinalizer(omniroute, finalizerName)
+		if err := r.Update(ctx, omniroute); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Set Progressing condition at the start of reconciliation.
+	r.setCondition(omniroute, gatewayv1alpha1.ConditionProgressing, metav1.ConditionTrue, "Reconciling", "Reconciliation in progress")
+
+	// Reconcile owned resources.
+	persistEnabled := omniroute.Spec.Persistence.Enabled == nil || *omniroute.Spec.Persistence.Enabled
+	if persistEnabled {
+		if err := r.reconcilePVC(ctx, omniroute); err != nil {
+			r.setCondition(omniroute, gatewayv1alpha1.ConditionDegraded, metav1.ConditionTrue, "PVCFailed", err.Error())
+			_ = r.statusUpdate(ctx, omniroute)
+			return ctrl.Result{}, err
+		}
+	}
+
 	if err := r.reconcileDeployment(ctx, omniroute); err != nil {
+		r.setCondition(omniroute, gatewayv1alpha1.ConditionDegraded, metav1.ConditionTrue, "DeploymentFailed", err.Error())
+		_ = r.statusUpdate(ctx, omniroute)
 		return ctrl.Result{}, err
 	}
 
 	if err := r.reconcileService(ctx, omniroute); err != nil {
+		r.setCondition(omniroute, gatewayv1alpha1.ConditionDegraded, metav1.ConditionTrue, "ServiceFailed", err.Error())
+		_ = r.statusUpdate(ctx, omniroute)
+		return ctrl.Result{}, err
+	}
+
+	// Update status from the Deployment.
+	r.updateStatusFromDeployment(ctx, omniroute)
+
+	if err := r.statusUpdate(ctx, omniroute); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *OmniRouteReconciler) reconcilePVC(ctx context.Context, cr *gatewayv1alpha1.OmniRoute) error {
+	log := logf.FromContext(ctx)
+	desired := r.buildPVC(cr)
+
+	if err := controllerutil.SetControllerReference(cr, desired, r.Scheme); err != nil {
+		return fmt.Errorf("setting controller reference on PVC: %w", err)
+	}
+
+	existing := &corev1.PersistentVolumeClaim{}
+	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, existing)
+	if errors.IsNotFound(err) {
+		log.Info("Creating PVC", "name", desired.Name)
+		return r.Create(ctx, desired)
+	}
+	if err != nil {
+		return err
+	}
+
+	// PVCs are mostly immutable after creation (storageClass, accessModes).
+	// Only storage size expansion is possible if the StorageClass allows it.
+	return nil
+}
+
+func (r *OmniRouteReconciler) buildPVC(cr *gatewayv1alpha1.OmniRoute) *corev1.PersistentVolumeClaim {
+	labels := labelsForOmniRoute(cr.Name)
+
+	size := cr.Spec.Persistence.Size
+	if size.IsZero() {
+		size = resource.MustParse("1Gi")
+	}
+
+	accessMode := corev1.ReadWriteOnce
+	if cr.Spec.Persistence.AccessMode != "" {
+		accessMode = cr.Spec.Persistence.AccessMode
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName(cr.Name),
+			Namespace: cr.Namespace,
+			Labels:    labels,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{accessMode},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: size,
+				},
+			},
+		},
+	}
+
+	if cr.Spec.Persistence.StorageClass != nil {
+		pvc.Spec.StorageClassName = cr.Spec.Persistence.StorageClass
+	}
+
+	return pvc
 }
 
 func (r *OmniRouteReconciler) reconcileDeployment(ctx context.Context, cr *gatewayv1alpha1.OmniRoute) error {
@@ -326,16 +428,6 @@ func buildVolumes(cr *gatewayv1alpha1.OmniRoute) ([]corev1.Volume, []corev1.Volu
 		return []corev1.Volume{vol}, []corev1.VolumeMount{mount}
 	}
 
-	size := cr.Spec.Persistence.Size
-	if size.IsZero() {
-		size = resource.MustParse("1Gi")
-	}
-
-	accessMode := corev1.ReadWriteOnce
-	if cr.Spec.Persistence.AccessMode != "" {
-		accessMode = cr.Spec.Persistence.AccessMode
-	}
-
 	vol := corev1.Volume{
 		Name: dataVolumeName,
 		VolumeSource: corev1.VolumeSource{
@@ -349,9 +441,6 @@ func buildVolumes(cr *gatewayv1alpha1.OmniRoute) ([]corev1.Volume, []corev1.Volu
 		Name:      dataVolumeName,
 		MountPath: dataMountPath,
 	}
-
-	_ = size
-	_ = accessMode
 
 	return []corev1.Volume{vol}, []corev1.VolumeMount{mount}
 }
@@ -387,6 +476,52 @@ func pvcName(crName string) string {
 	return crName + "-data"
 }
 
+func (r *OmniRouteReconciler) updateStatusFromDeployment(ctx context.Context, cr *gatewayv1alpha1.OmniRoute) {
+	dep := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, dep)
+	if err != nil {
+		return
+	}
+
+	cr.Status.ReadyReplicas = dep.Status.ReadyReplicas
+	cr.Status.ObservedGeneration = cr.Generation
+
+	if dep.Status.ReadyReplicas > 0 && dep.Status.ReadyReplicas == dep.Status.Replicas {
+		cr.Status.Phase = "Running"
+		r.setCondition(cr, gatewayv1alpha1.ConditionReady, metav1.ConditionTrue, "DeploymentReady", "All replicas are ready")
+		r.setCondition(cr, gatewayv1alpha1.ConditionProgressing, metav1.ConditionFalse, "ReconcileComplete", "Reconciliation finished")
+		r.setCondition(cr, gatewayv1alpha1.ConditionDegraded, metav1.ConditionFalse, "NotDegraded", "All resources healthy")
+	} else {
+		cr.Status.Phase = "Progressing"
+		r.setCondition(cr, gatewayv1alpha1.ConditionReady, metav1.ConditionFalse, "DeploymentNotReady", "Waiting for replicas")
+	}
+}
+
+func (r *OmniRouteReconciler) setCondition(cr *gatewayv1alpha1.OmniRoute, condType gatewayv1alpha1.ConditionType, status metav1.ConditionStatus, reason, message string) {
+	condition := metav1.Condition{
+		Type:               string(condType),
+		Status:             status,
+		ObservedGeneration: cr.Generation,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            message,
+	}
+
+	for i, c := range cr.Status.Conditions {
+		if c.Type == string(condType) {
+			if c.Status != status {
+				cr.Status.Conditions[i] = condition
+			}
+			return
+		}
+	}
+	cr.Status.Conditions = append(cr.Status.Conditions, condition)
+}
+
+func (r *OmniRouteReconciler) statusUpdate(ctx context.Context, cr *gatewayv1alpha1.OmniRoute) error {
+	return r.Status().Update(ctx, cr)
+}
+
 func boolPtr(b bool) *bool    { return &b }
 func int64Ptr(i int64) *int64 { return &i }
 
@@ -396,6 +531,7 @@ func (r *OmniRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&gatewayv1alpha1.OmniRoute{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
+		Owns(&corev1.PersistentVolumeClaim{}).
 		Named("omniroute").
 		Complete(r)
 }
