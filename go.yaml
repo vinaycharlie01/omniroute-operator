@@ -46,6 +46,15 @@ bench:
   args:
     - "-timeout=120s"
 
+integration:
+  packages:
+    - ./tests/integration/
+  args:
+    - "-v"
+    - "-timeout=10m"
+  env:
+    - "INTEGRATION=1"
+
 lint:
   args:
     - "--timeout=10m"

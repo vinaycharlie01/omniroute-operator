@@ -15,16 +15,17 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 
-	gomagex "github.com/nirantaraai/nava/mage/golang"
-	k3dmagex "github.com/nirantaraai/nava/mage/k3d"
 	"github.com/magefile/mage/mg"
+	gomagex "github.com/nirantaraai/nava/mage/golang"
+	helmmagex "github.com/nirantaraai/nava/mage/helm"
+	k3dmagex "github.com/nirantaraai/nava/mage/k3d"
+	operatormagex "github.com/nirantaraai/nava/mage/operator"
 )
 
 func init() {
 	_ = gomagex.LoadConfig("go.yaml")
+	_ = helmmagex.LoadConfig("helm.yaml")
 	_ = k3dmagex.LoadConfig("k3d.yaml")
 }
 
@@ -55,68 +56,36 @@ func Bench() error { return gomagex.Bench() }
 // Govulncheck runs govulncheck for vulnerability scanning.
 func Govulncheck() error { return gomagex.Govulncheck() }
 
-// IntegrationTest runs integration tests (requires Docker).
-func IntegrationTest() error {
-	fmt.Println("Running integration tests (requires Docker)...")
-	cmd := exec.Command("go", "test", "-tags=integration", "-v", "-timeout=10m", "./tests/integration/")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+// IntegrationTest runs integration tests (config: go.yaml → integration).
+func IntegrationTest() error { return gomagex.Integration() }
 
 // BuildLinux cross-compiles for linux/amd64 and linux/arm64 (config: go.yaml → crossBuild).
 func BuildLinux() error { return gomagex.CrossBuild() }
 
-// Generate runs all code generation (DeepCopy + CRD/RBAC manifests).
+// Generate runs all code generation (DeepCopy + CRD/RBAC manifests) and syncs CRDs to Helm.
 func Generate() error {
-	if err := generateDeepCopy(); err != nil {
+	if err := operatormagex.GenerateCode(""); err != nil {
 		return err
 	}
-	return generateManifests()
+	return operatormagex.GenerateAndSync("charts/omniroute-operator/crds")
 }
 
 // GenerateManifests generates CRD and RBAC manifests using controller-gen.
-func GenerateManifests() error { return generateManifests() }
+func GenerateManifests() error {
+	return operatormagex.GenerateAndSync("charts/omniroute-operator/crds")
+}
 
 // GenerateDeepCopy generates DeepCopy implementations for API types.
-func GenerateDeepCopy() error { return generateDeepCopy() }
+func GenerateDeepCopy() error { return operatormagex.GenerateCode("") }
 
-// HelmLint runs helm lint on the operator chart.
-func HelmLint() error {
-	fmt.Println("Running Helm lint...")
-	cmd := exec.Command("helm", "lint", "charts/omniroute-operator", "--strict")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+// HelmLint runs helm lint on the operator chart (config: helm.yaml → lint).
+func HelmLint() error { return helmmagex.Lint() }
 
-// HelmPackage packages the operator Helm chart.
-func HelmPackage() error {
-	if err := os.MkdirAll(".helm-pkg", 0o755); err != nil {
-		return err
-	}
-	fmt.Println("Packaging Helm chart...")
-	cmd := exec.Command("helm", "package", "charts/omniroute-operator", "--destination", ".helm-pkg")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+// HelmPackage packages the operator Helm chart (config: helm.yaml → package).
+func HelmPackage() error { return helmmagex.Package() }
 
-// HelmPush packages and pushes the Helm chart to the OCI registry.
-func HelmPush() error {
-	if err := HelmPackage(); err != nil {
-		return err
-	}
-	pkgs, err := filepath.Glob(".helm-pkg/omniroute-operator-*.tgz")
-	if err != nil || len(pkgs) == 0 {
-		return fmt.Errorf("no packaged chart found in .helm-pkg/")
-	}
-	fmt.Println("Pushing Helm chart to OCI registry...")
-	cmd := exec.Command("helm", "push", pkgs[0], "oci://ghcr.io/vinaycharlie01/helm-charts")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+// HelmPush packages and pushes the Helm chart to the OCI registry (config: helm.yaml → push).
+func HelmPush() error { return helmmagex.Push() }
 
 // K3d namespace for local cluster operations (config: k3d.yaml).
 type K3d mg.Namespace
@@ -146,66 +115,4 @@ func Clean() error {
 		return err
 	}
 	return os.RemoveAll("dist")
-}
-
-func generateManifests() error {
-	controllerGen, err := findControllerGen()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(controllerGen,
-		"rbac:roleName=manager-role",
-		"crd",
-		"webhook",
-		"paths=./...",
-		"output:crd:artifacts:config=config/crd/bases",
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	fmt.Println("Generating CRD and RBAC manifests...")
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	return syncCRDToHelm()
-}
-
-func syncCRDToHelm() error {
-	src := "config/crd/bases/gateway.omniroute.ai_omniroutes.yaml"
-	dst := "charts/omniroute-operator/crds/gateway.omniroute.ai_omniroutes.yaml"
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("read CRD: %w", err)
-	}
-	if err := os.MkdirAll("charts/omniroute-operator/crds", 0o755); err != nil {
-		return err
-	}
-	fmt.Println("Syncing CRD to Helm chart...")
-	return os.WriteFile(dst, data, 0o644)
-}
-
-func generateDeepCopy() error {
-	controllerGen, err := findControllerGen()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(controllerGen,
-		"object",
-		"paths=./api/...",
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	fmt.Println("Generating DeepCopy implementations...")
-	return cmd.Run()
-}
-
-func findControllerGen() (string, error) {
-	local := "bin/controller-gen"
-	if _, err := os.Stat(local); err == nil {
-		return local, nil
-	}
-	path, err := exec.LookPath("controller-gen")
-	if err != nil {
-		return "", fmt.Errorf("controller-gen not found in bin/ or PATH: %w", err)
-	}
-	return path, nil
 }
