@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	gomagex "github.com/nirantaraai/nava/mage/golang"
 )
@@ -64,6 +65,43 @@ func GenerateManifests() error { return generateManifests() }
 
 // GenerateDeepCopy generates DeepCopy implementations for API types.
 func GenerateDeepCopy() error { return generateDeepCopy() }
+
+// HelmLint runs helm lint on the operator chart.
+func HelmLint() error {
+	fmt.Println("Running Helm lint...")
+	cmd := exec.Command("helm", "lint", "charts/omniroute-operator", "--strict")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// HelmPackage packages the operator Helm chart.
+func HelmPackage() error {
+	if err := os.MkdirAll(".helm-pkg", 0o755); err != nil {
+		return err
+	}
+	fmt.Println("Packaging Helm chart...")
+	cmd := exec.Command("helm", "package", "charts/omniroute-operator", "--destination", ".helm-pkg")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// HelmPush packages and pushes the Helm chart to the OCI registry.
+func HelmPush() error {
+	if err := HelmPackage(); err != nil {
+		return err
+	}
+	pkgs, err := filepath.Glob(".helm-pkg/omniroute-operator-*.tgz")
+	if err != nil || len(pkgs) == 0 {
+		return fmt.Errorf("no packaged chart found in .helm-pkg/")
+	}
+	fmt.Println("Pushing Helm chart to OCI registry...")
+	cmd := exec.Command("helm", "push", pkgs[0], "oci://ghcr.io/vinaycharlie01/helm-charts")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
 
 // Clean removes build artefacts.
 func Clean() error {
