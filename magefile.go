@@ -19,10 +19,13 @@ import (
 	"path/filepath"
 
 	gomagex "github.com/nirantaraai/nava/mage/golang"
+	k3dmagex "github.com/nirantaraai/nava/mage/k3d"
+	"github.com/magefile/mage/mg"
 )
 
 func init() {
 	_ = gomagex.LoadConfig("go.yaml")
+	_ = k3dmagex.LoadConfig("k3d.yaml")
 }
 
 // Build compiles the operator binary (config: go.yaml → build).
@@ -105,6 +108,27 @@ func HelmPush() error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
+
+// K3d namespace for local cluster operations (config: k3d.yaml).
+type K3d mg.Namespace
+
+// Up creates a k3d cluster, bootstraps infrastructure, and installs the operator.
+func (K3d) Up() error { return k3dmagex.Up() }
+
+// Down tears down the k3d cluster.
+func (K3d) Down() error { return k3dmagex.Down() }
+
+// Create creates just the k3d cluster.
+func (K3d) Create() error { return k3dmagex.ClusterCreate() }
+
+// Delete deletes just the k3d cluster.
+func (K3d) Delete() error { return k3dmagex.ClusterDelete() }
+
+// Bootstrap applies infrastructure manifests (namespaces, etc.).
+func (K3d) Bootstrap() error { return k3dmagex.Bootstrap() }
+
+// Status shows the cluster state.
+func (K3d) Status() error { return k3dmagex.Status() }
 
 // Clean removes build artefacts.
 func Clean() error {

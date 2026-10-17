@@ -18,6 +18,7 @@ and PersistentVolumeClaims so you get a fully managed OmniRoute instance with a 
 - Leader election for high-availability operator deployments
 - Multi-arch container images (linux/amd64, linux/arm64)
 - Helm chart for operator installation
+- One-command local cluster via [k3d](https://k3d.io/) + [Nava](https://github.com/nirantaraai/nava) mage targets
 
 ## Prerequisites
 
@@ -31,54 +32,41 @@ For local development and testing:
 
 | Tool | Version |
 |------|---------|
-| [Kind](https://kind.sigs.k8s.io/) | >= 0.20 |
+| [k3d](https://k3d.io/) | >= 5.6 |
 | Docker | >= 24 |
 | Go | 1.27 |
 | [Mage](https://magefile.org/) | v1.17.2 |
 
-## Quick Start with Kind
+## Quick Start — Local Cluster with k3d
 
-### 1. Create a Kind cluster
+The operator ships with a `k3d.yaml` config and Nava-powered mage targets that handle
+the entire local cluster lifecycle: create, bootstrap, install operator, and teardown.
+
+### 1. Create the cluster and install the operator
 
 ```bash
-kind create cluster --name omniroute
+go install github.com/magefile/mage@v1.17.2
+
+mage k3d:up
 ```
 
-Verify the cluster is running:
+This single command:
+- Creates a k3d cluster named `omniroute` with port `20128` forwarded to your host
+- Bootstraps infrastructure (creates `omniroute-system` and `ai-platform` namespaces)
+- Installs the operator Helm chart into `omniroute-system`
+
+Verify everything is running:
 
 ```bash
-kubectl cluster-info --context kind-omniroute
-```
-
-### 2. Install the operator via Helm
-
-```bash
-helm install omniroute-operator oci://ghcr.io/vinaycharlie01/helm-charts/omniroute-operator \
-  --namespace omniroute-system --create-namespace
-```
-
-Or install from source:
-
-```bash
-git clone https://github.com/vinaycharlie01/omniroute-operator.git
-cd omniroute-operator
-helm install omniroute-operator charts/omniroute-operator \
-  --namespace omniroute-system --create-namespace
-```
-
-Verify the operator is running:
-
-```bash
+mage k3d:status
 kubectl get pods -n omniroute-system
 ```
 
-### 3. Create the OmniRoute secrets
+### 2. Create the OmniRoute secrets
 
 OmniRoute requires three secrets: `JWT_SECRET`, `API_KEY_SECRET`, and `INITIAL_PASSWORD`.
 
 ```bash
-kubectl create namespace ai-platform
-
 kubectl create secret generic omniroute-secrets \
   --namespace ai-platform \
   --from-literal=JWT_SECRET="$(openssl rand -base64 48)" \
@@ -86,9 +74,13 @@ kubectl create secret generic omniroute-secrets \
   --from-literal=INITIAL_PASSWORD="changeme"
 ```
 
-### 4. Deploy an OmniRoute instance
+### 3. Deploy an OmniRoute instance
 
-Create an `OmniRoute` custom resource:
+```bash
+kubectl apply -f config/samples/gateway_v1alpha1_omniroute.yaml
+```
+
+Or create a custom resource:
 
 ```bash
 kubectl apply -f - <<'EOF'
@@ -127,20 +119,23 @@ kubectl wait --for=condition=available deployment/omniroute \
   --namespace ai-platform --timeout=120s
 ```
 
-### 5. Access the OmniRoute UI
+### 4. Access the OmniRoute UI
 
-**Option A — Port forward (simplest)**
+**Option A — Port forward (works on any cluster)**
 
 ```bash
 kubectl port-forward svc/omniroute 20128:20128 -n ai-platform
 ```
 
-Open your browser at **http://localhost:20128**. Log in with the password you set in
-`INITIAL_PASSWORD` (default: `changeme`).
+Open **http://localhost:20128** in your browser.
 
-**Option B — NodePort**
+**Option B — Direct access via k3d port mapping (already configured)**
 
-Change the service type in your CR:
+The `k3d.yaml` maps port `20128` from the cluster to your host. If the OmniRoute
+Service is a `NodePort` targeting port 20128, you can access it directly at
+**http://localhost:20128** without port-forwarding.
+
+To use NodePort, set the service type in your CR:
 
 ```yaml
 spec:
@@ -149,41 +144,7 @@ spec:
     port: 20128
 ```
 
-Then find the assigned port:
-
-```bash
-kubectl get svc omniroute -n ai-platform -o jsonpath='{.spec.ports[0].nodePort}'
-```
-
-With Kind, the node IP is reachable via Docker. Get it and open the UI:
-
-```bash
-NODE_PORT=$(kubectl get svc omniroute -n ai-platform -o jsonpath='{.spec.ports[0].nodePort}')
-echo "OmniRoute UI: http://localhost:${NODE_PORT}"
-```
-
-> **Note:** For Kind with NodePort, you need to create the cluster with port mappings. See
-> [Kind extraPortMappings](https://kind.sigs.k8s.io/docs/user/configuration/#extra-port-mappings):
->
-> ```yaml
-> # kind-config.yaml
-> kind: Cluster
-> apiVersion: kind.x-k8s.io/v1alpha4
-> nodes:
->   - role: control-plane
->     extraPortMappings:
->       - containerPort: 30000
->         hostPort: 20128
->         protocol: TCP
-> ```
->
-> ```bash
-> kind create cluster --name omniroute --config kind-config.yaml
-> ```
->
-> Then set the NodePort to 30000 in a values override or directly in your CR.
-
-**Option C — LoadBalancer (cloud or MetalLB)**
+**Option C — LoadBalancer (cloud clusters or MetalLB)**
 
 ```yaml
 spec:
@@ -197,12 +158,16 @@ kubectl get svc omniroute -n ai-platform -w
 # Wait for EXTERNAL-IP, then open http://<EXTERNAL-IP>:20128
 ```
 
+### 5. Log in
+
+Use the password set in `INITIAL_PASSWORD` (default: `changeme`).
+The dashboard provides access to provider management, routing configuration, and monitoring.
+
 ### 6. Use the OmniRoute API
 
-Once accessible, OmniRoute exposes an OpenAI-compatible API:
+OmniRoute exposes an OpenAI-compatible API:
 
 ```bash
-# Via port-forward (step 5a)
 curl http://localhost:20128/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
@@ -215,20 +180,73 @@ curl http://localhost:20128/v1/chat/completions \
 
 ```bash
 kubectl delete omniroute omniroute -n ai-platform
-kubectl delete secret omniroute-secrets -n ai-platform
-kubectl delete namespace ai-platform
-helm uninstall omniroute-operator -n omniroute-system
-kind delete cluster --name omniroute
+mage k3d:down
 ```
+
+## k3d Configuration
+
+The cluster is configured in `k3d.yaml` (Nava k3d format):
+
+```yaml
+cluster:
+  name: omniroute
+  servers: 1
+  agents: 0
+  ports:
+    - "20128:20128@server:0"    # OmniRoute UI + API
+  k3sArgs:
+    - "--disable=traefik@server:0"
+
+infrastructure:
+  kustomizePath: config/k3d/infrastructure
+
+releases:
+  - name: omniroute-operator
+    chart: charts/omniroute-operator
+    namespace: omniroute-system
+    wait: true
+    timeout: "120s"
+```
+
+You can customize ports, add agents for multi-node testing, or add extra Helm releases.
+
+## Helm Installation (Production)
+
+For production clusters, install the operator directly via Helm:
+
+```bash
+helm install omniroute-operator oci://ghcr.io/vinaycharlie01/helm-charts/omniroute-operator \
+  --namespace omniroute-system --create-namespace
+```
+
+Or from the source chart:
+
+```bash
+helm install omniroute-operator charts/omniroute-operator \
+  --namespace omniroute-system --create-namespace
+```
+
+### Helm Values
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| `replicaCount` | `1` | Operator pod replicas |
+| `image.repository` | `ghcr.io/vinaycharlie01/omniroute-operator` | Operator image |
+| `image.tag` | `""` (appVersion) | Operator image tag |
+| `leaderElection.enabled` | `true` | Enable leader election |
+| `resources.requests.cpu` | `10m` | CPU request |
+| `resources.requests.memory` | `64Mi` | Memory request |
+| `resources.limits.cpu` | `500m` | CPU limit |
+| `resources.limits.memory` | `128Mi` | Memory limit |
 
 ## CRD Reference
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `spec.image.repository` | string | `diegosouzapw/omniroute` | Container image repository |
-| `spec.image.tag` | string | `3.8.51` | Container image tag |
+| `spec.image.repository` | string | `diegosouzapw/omniroute` | OmniRoute container image |
+| `spec.image.tag` | string | `3.8.51` | Image tag |
 | `spec.image.pullPolicy` | string | `IfNotPresent` | Image pull policy |
-| `spec.replicas` | int | `1` | Number of pods (max 1 — SQLite single-writer) |
+| `spec.replicas` | int | `1` | Pod count (max 1 — SQLite single-writer) |
 | `spec.service.type` | string | `ClusterIP` | Service type: ClusterIP, NodePort, LoadBalancer |
 | `spec.service.port` | int | `20128` | Service port |
 | `spec.resources` | ResourceRequirements | — | CPU/memory requests and limits |
@@ -242,42 +260,55 @@ kind delete cluster --name omniroute
 
 ## Development
 
-### Build
+### Mage Targets
 
 ```bash
 go install github.com/magefile/mage@v1.17.2
 
+# Build
 mage build            # Compile for current platform → bin/manager
 mage buildLinux       # Cross-compile linux/amd64 + linux/arm64 → dist/
+
+# Test
 mage test             # Unit tests
-mage lint             # golangci-lint
 mage race             # Tests with race detection
-mage coverage         # Tests with coverage profiling
+mage coverage         # Tests with coverage → coverage.out
+mage bench            # Benchmarks
+
+# Quality
+mage lint             # golangci-lint
+mage vet              # go vet
+mage govulncheck      # Vulnerability scanning
+
+# Code generation
 mage generate         # Regenerate DeepCopy + CRD/RBAC manifests
+
+# Helm
 mage helmLint         # Lint the Helm chart
+mage helmPackage      # Package the chart
+mage helmPush         # Package and push to OCI registry
+
+# k3d local cluster
+mage k3d:up           # Create cluster + bootstrap + install operator
+mage k3d:down         # Tear down the cluster
+mage k3d:create       # Create just the cluster
+mage k3d:delete       # Delete just the cluster
+mage k3d:bootstrap    # Apply infrastructure manifests
+mage k3d:status       # Show cluster state
+
+# Cleanup
 mage clean            # Remove build artifacts
 ```
 
-### Run locally against a Kind cluster
+### Run the operator locally
 
 ```bash
-# Point at your Kind cluster
-export KUBECONFIG="$(kind get kubeconfig-path --name=omniroute 2>/dev/null || echo ~/.kube/config)"
-
-# Install the CRD
+# Install the CRD into your cluster
 kubectl apply -f config/crd/bases/
 
-# Run the operator outside the cluster
+# Run the operator outside the cluster (for debugging)
 mage build
 ./bin/manager --health-probe-bind-address=:8081
-```
-
-### Run tests
-
-```bash
-mage test             # Unit tests
-mage race             # Race detection
-mage coverage         # Coverage report → coverage.out
 ```
 
 ## CI/CD
