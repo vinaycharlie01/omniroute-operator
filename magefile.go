@@ -52,6 +52,9 @@ func Bench() error { return gomagex.Bench() }
 // Govulncheck runs govulncheck for vulnerability scanning.
 func Govulncheck() error { return gomagex.Govulncheck() }
 
+// BuildLinux cross-compiles for linux/amd64 and linux/arm64 (config: go.yaml → crossBuild).
+func BuildLinux() error { return gomagex.CrossBuild() }
+
 // Generate runs all code generation (DeepCopy + CRD/RBAC manifests).
 func Generate() error {
 	if err := generateDeepCopy(); err != nil {
@@ -105,11 +108,11 @@ func HelmPush() error {
 
 // Clean removes build artefacts.
 func Clean() error {
-	fmt.Println("cleaning bin/manager")
+	fmt.Println("cleaning build artifacts")
 	if err := os.Remove("bin/manager"); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return nil
+	return os.RemoveAll("dist")
 }
 
 func generateManifests() error {
