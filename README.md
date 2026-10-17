@@ -274,6 +274,7 @@ mage test             # Unit tests
 mage race             # Tests with race detection
 mage coverage         # Tests with coverage → coverage.out
 mage bench            # Benchmarks
+mage integrationTest  # Integration tests (requires Docker)
 
 # Quality
 mage lint             # golangci-lint

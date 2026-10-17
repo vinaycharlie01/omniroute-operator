@@ -55,6 +55,15 @@ func Bench() error { return gomagex.Bench() }
 // Govulncheck runs govulncheck for vulnerability scanning.
 func Govulncheck() error { return gomagex.Govulncheck() }
 
+// IntegrationTest runs integration tests (requires Docker).
+func IntegrationTest() error {
+	fmt.Println("Running integration tests (requires Docker)...")
+	cmd := exec.Command("go", "test", "-tags=integration", "-v", "-timeout=10m", "./tests/integration/")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // BuildLinux cross-compiles for linux/amd64 and linux/arm64 (config: go.yaml → crossBuild).
 func BuildLinux() error { return gomagex.CrossBuild() }
 
