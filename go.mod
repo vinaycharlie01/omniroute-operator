@@ -3,6 +3,7 @@ module github.com/vinaycharlie01/omniroute-operator
 go 1.27.0
 
 require (
+	github.com/magefile/mage v1.17.2
 	github.com/nirantaraai/nava v0.0.0-20260804161138-829b62dafd5a
 	go.uber.org/mock v0.6.0
 	k8s.io/api v0.33.0
