@@ -13,110 +13,71 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-
-	gomagex "github.com/nirantaraai/nava/mage/golang"
-	k3dmagex "github.com/nirantaraai/nava/mage/k3d"
 	"github.com/magefile/mage/mg"
+	cimagex "github.com/nirantaraai/nava/mage/ci"
+	gomagex "github.com/nirantaraai/nava/mage/golang"
+	helmmagex "github.com/nirantaraai/nava/mage/helm"
+	k3dmagex "github.com/nirantaraai/nava/mage/k3d"
+	operatormagex "github.com/nirantaraai/nava/mage/operator"
 )
 
 func init() {
 	_ = gomagex.LoadConfig("go.yaml")
+	_ = helmmagex.LoadConfig("helm.yaml")
 	_ = k3dmagex.LoadConfig("k3d.yaml")
+	_ = operatormagex.LoadConfig("operator.yaml")
 }
 
-// Build compiles the operator binary (config: go.yaml → build).
+// Build compiles the operator binary (config: go.yaml).
 func Build() error { return gomagex.Build() }
 
-// Test runs the unit test suite (config: go.yaml → test).
+// Test runs the unit test suite (config: go.yaml).
 func Test() error { return gomagex.Test() }
 
-// Lint runs golangci-lint (config: go.yaml → lint).
+// Lint runs golangci-lint (config: go.yaml).
 func Lint() error { return gomagex.Lint() }
 
-// Vet runs go vet (config: go.yaml → vet).
+// Vet runs go vet (config: go.yaml).
 func Vet() error { return gomagex.Vet() }
 
-// Setup downloads Go modules (config: go.yaml → setup).
+// Setup downloads Go modules (config: go.yaml).
 func Setup() error { return gomagex.Setup() }
 
-// Race runs tests with race detection (config: go.yaml → race).
+// Race runs tests with race detection (config: go.yaml).
 func Race() error { return gomagex.Race() }
 
-// Coverage runs tests with coverage profiling (config: go.yaml → coverage).
+// Coverage runs tests with coverage profiling (config: go.yaml).
 func Coverage() error { return gomagex.Coverage() }
 
-// Bench runs benchmarks (config: go.yaml → bench).
+// Bench runs benchmarks (config: go.yaml).
 func Bench() error { return gomagex.Bench() }
 
 // Govulncheck runs govulncheck for vulnerability scanning.
 func Govulncheck() error { return gomagex.Govulncheck() }
 
-// IntegrationTest runs integration tests (requires Docker).
-func IntegrationTest() error {
-	fmt.Println("Running integration tests (requires Docker)...")
-	cmd := exec.Command("go", "test", "-tags=integration", "-v", "-timeout=10m", "./tests/integration/")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+// IntegrationTest runs integration tests (config: go.yaml).
+func IntegrationTest() error { return gomagex.Integration() }
 
-// BuildLinux cross-compiles for linux/amd64 and linux/arm64 (config: go.yaml → crossBuild).
+// BuildLinux cross-compiles for linux/amd64 and linux/arm64 (config: go.yaml).
 func BuildLinux() error { return gomagex.CrossBuild() }
 
-// Generate runs all code generation (DeepCopy + CRD/RBAC manifests).
-func Generate() error {
-	if err := generateDeepCopy(); err != nil {
-		return err
-	}
-	return generateManifests()
-}
+// Generate runs all code generation (DeepCopy + CRD/RBAC manifests) and syncs CRDs to Helm (config: operator.yaml).
+func Generate() error { return operatormagex.GenerateFromConfig() }
 
 // GenerateManifests generates CRD and RBAC manifests using controller-gen.
-func GenerateManifests() error { return generateManifests() }
+func GenerateManifests() error { return operatormagex.GenerateManifests() }
 
 // GenerateDeepCopy generates DeepCopy implementations for API types.
-func GenerateDeepCopy() error { return generateDeepCopy() }
+func GenerateDeepCopy() error { return operatormagex.GenerateCode("") }
 
-// HelmLint runs helm lint on the operator chart.
-func HelmLint() error {
-	fmt.Println("Running Helm lint...")
-	cmd := exec.Command("helm", "lint", "charts/omniroute-operator", "--strict")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+// HelmLint runs helm lint on the operator chart (config: helm.yaml).
+func HelmLint() error { return helmmagex.Lint() }
 
-// HelmPackage packages the operator Helm chart.
-func HelmPackage() error {
-	if err := os.MkdirAll(".helm-pkg", 0o755); err != nil {
-		return err
-	}
-	fmt.Println("Packaging Helm chart...")
-	cmd := exec.Command("helm", "package", "charts/omniroute-operator", "--destination", ".helm-pkg")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+// HelmPackage packages the operator Helm chart (config: helm.yaml).
+func HelmPackage() error { return helmmagex.Package() }
 
-// HelmPush packages and pushes the Helm chart to the OCI registry.
-func HelmPush() error {
-	if err := HelmPackage(); err != nil {
-		return err
-	}
-	pkgs, err := filepath.Glob(".helm-pkg/omniroute-operator-*.tgz")
-	if err != nil || len(pkgs) == 0 {
-		return fmt.Errorf("no packaged chart found in .helm-pkg/")
-	}
-	fmt.Println("Pushing Helm chart to OCI registry...")
-	cmd := exec.Command("helm", "push", pkgs[0], "oci://ghcr.io/vinaycharlie01/helm-charts")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+// HelmPush packages and pushes the Helm chart to the OCI registry (config: helm.yaml).
+func HelmPush() error { return helmmagex.Push() }
 
 // K3d namespace for local cluster operations (config: k3d.yaml).
 type K3d mg.Namespace
@@ -139,73 +100,17 @@ func (K3d) Bootstrap() error { return k3dmagex.Bootstrap() }
 // Status shows the cluster state.
 func (K3d) Status() error { return k3dmagex.Status() }
 
-// Clean removes build artefacts.
-func Clean() error {
-	fmt.Println("cleaning build artifacts")
-	if err := os.Remove("bin/manager"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return os.RemoveAll("dist")
-}
+// Clean removes build artefacts (config: operator.yaml).
+func Clean() error { return operatormagex.CleanFromConfig() }
 
-func generateManifests() error {
-	controllerGen, err := findControllerGen()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(controllerGen,
-		"rbac:roleName=manager-role",
-		"crd",
-		"webhook",
-		"paths=./...",
-		"output:crd:artifacts:config=config/crd/bases",
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	fmt.Println("Generating CRD and RBAC manifests...")
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	return syncCRDToHelm()
-}
+// CI namespace for continuous integration targets.
+type CI mg.Namespace
 
-func syncCRDToHelm() error {
-	src := "config/crd/bases/gateway.omniroute.ai_omniroutes.yaml"
-	dst := "charts/omniroute-operator/crds/gateway.omniroute.ai_omniroutes.yaml"
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("read CRD: %w", err)
-	}
-	if err := os.MkdirAll("charts/omniroute-operator/crds", 0o755); err != nil {
-		return err
-	}
-	fmt.Println("Syncing CRD to Helm chart...")
-	return os.WriteFile(dst, data, 0o644)
-}
+// VerifyGenerate runs code generation and fails if the working tree has changes.
+func (CI) VerifyGenerate() error { return cimagex.VerifyGeneratedMage("generate") }
 
-func generateDeepCopy() error {
-	controllerGen, err := findControllerGen()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(controllerGen,
-		"object",
-		"paths=./api/...",
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	fmt.Println("Generating DeepCopy implementations...")
-	return cmd.Run()
-}
+// VerifyModTidy runs go mod tidy and fails if go.mod/go.sum change.
+func (CI) VerifyModTidy() error { return cimagex.VerifyModTidy() }
 
-func findControllerGen() (string, error) {
-	local := "bin/controller-gen"
-	if _, err := os.Stat(local); err == nil {
-		return local, nil
-	}
-	path, err := exec.LookPath("controller-gen")
-	if err != nil {
-		return "", fmt.Errorf("controller-gen not found in bin/ or PATH: %w", err)
-	}
-	return path, nil
-}
+// Check runs go vet + mod tidy verification.
+func (CI) Check() error { return cimagex.Check("mage") }

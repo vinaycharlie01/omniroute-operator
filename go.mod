@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/magefile/mage v1.17.2
-	github.com/nirantaraai/nava v0.0.0-20260804161138-829b62dafd5a
+	github.com/nirantaraai/nava v0.0.0-20261017180501-dc41a781b588
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go/modules/k3s v0.44.0
 	go.uber.org/mock v0.6.0

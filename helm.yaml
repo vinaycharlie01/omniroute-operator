@@ -1,0 +1,12 @@
+lint:
+  chart: charts/omniroute-operator
+  args: ["--strict"]
+
+package:
+  chart: charts/omniroute-operator
+  destination: .helm-pkg
+
+push:
+  chart: charts/omniroute-operator
+  registry: oci://ghcr.io/vinaycharlie01/helm-charts
+  destination: .helm-pkg
