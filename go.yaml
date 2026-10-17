@@ -52,6 +52,7 @@ integration:
   args:
     - "-v"
     - "-timeout=10m"
+    - "-tags=integration"
   env:
     - "INTEGRATION=1"
 
