@@ -40,11 +40,23 @@ import (
 )
 
 const (
-	testNamespace    = "default"
-	testName         = "test-omniroute"
-	testDefaultImage = "diegosouzapw/omniroute:3.8.51"
-	testMinimalName  = "minimal"
-	testSecretName   = "with-secrets"
+	testNamespace      = "default"
+	testName           = "test-omniroute"
+	testDefaultImage   = "diegosouzapw/omniroute:3.8.51"
+	testMinimalName    = "minimal"
+	testSecretName     = "with-secrets"
+	testProbe       = "probe-test"
+	testCustomProbe = "custom-probe"
+	testEnvFrom     = "envfrom-test"
+	testNodeOpts    = "node-opts"
+	testNoNodeOpts  = "no-node-opts"
+	testRedis       = "redis-test"
+	testRedisSecret = "redis-secret"
+	testEncryption  = "enc-test"
+	testBasePath    = "basepath-test"
+	testIngress     = "ingress-test"
+	testNoIngress   = "no-ingress"
+	testServiceAnn  = "svc-ann"
 )
 
 func newScheme() *runtime.Scheme {
@@ -160,11 +172,11 @@ func TestReconcile_CreatesDeploymentAndService(t *testing.T) {
 	if container.StartupProbe == nil {
 		t.Error("expected StartupProbe to be set")
 	}
-	if container.LivenessProbe.HTTPGet.Path != "/api/monitoring/health" {
-		t.Errorf("LivenessProbe path = %q, want /api/monitoring/health", container.LivenessProbe.HTTPGet.Path)
+	if container.LivenessProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("LivenessProbe path = %q, want %s", container.LivenessProbe.HTTPGet.Path, defaultHealthPath)
 	}
-	if container.ReadinessProbe.HTTPGet.Path != "/api/monitoring/health" {
-		t.Errorf("ReadinessProbe path = %q, want /api/monitoring/health", container.ReadinessProbe.HTTPGet.Path)
+	if container.ReadinessProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("ReadinessProbe path = %q, want %s", container.ReadinessProbe.HTTPGet.Path, defaultHealthPath)
 	}
 
 	podSpec := dep.Spec.Template.Spec
@@ -647,38 +659,38 @@ func TestServicePort(t *testing.T) {
 func TestReconcile_DefaultHealthProbes(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "probe-test", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testProbe, Namespace: testNamespace},
 		Spec:       gatewayv1alpha1.OmniRouteSpec{},
 	}
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "probe-test", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testProbe, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 
 	dep := &appsv1.Deployment{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "probe-test", Namespace: testNamespace}, dep)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testProbe, Namespace: testNamespace}, dep)
 	container := dep.Spec.Template.Spec.Containers[0]
 
-	if container.LivenessProbe.HTTPGet.Path != "/api/monitoring/health" {
-		t.Errorf("default liveness path = %q, want /api/monitoring/health", container.LivenessProbe.HTTPGet.Path)
+	if container.LivenessProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("default liveness path = %q, want %s", container.LivenessProbe.HTTPGet.Path, defaultHealthPath)
 	}
-	if container.ReadinessProbe.HTTPGet.Path != "/api/monitoring/health" {
-		t.Errorf("default readiness path = %q, want /api/monitoring/health", container.ReadinessProbe.HTTPGet.Path)
+	if container.ReadinessProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("default readiness path = %q, want %s", container.ReadinessProbe.HTTPGet.Path, defaultHealthPath)
 	}
-	if container.StartupProbe.HTTPGet.Path != "/api/monitoring/health" {
-		t.Errorf("default startup path = %q, want /api/monitoring/health", container.StartupProbe.HTTPGet.Path)
+	if container.StartupProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("default startup path = %q, want %s", container.StartupProbe.HTTPGet.Path, defaultHealthPath)
 	}
 }
 
 func TestReconcile_CustomProbes(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "custom-probe", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testCustomProbe, Namespace: testNamespace},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Probes: &gatewayv1alpha1.ProbesSpec{
 				LivenessPath:  "/custom/livez",
@@ -691,11 +703,11 @@ func TestReconcile_CustomProbes(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "custom-probe", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testCustomProbe, Namespace: testNamespace},
 	})
 
 	dep := &appsv1.Deployment{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "custom-probe", Namespace: testNamespace}, dep)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testCustomProbe, Namespace: testNamespace}, dep)
 	container := dep.Spec.Template.Spec.Containers[0]
 
 	if container.LivenessProbe.HTTPGet.Path != "/custom/livez" {
@@ -712,7 +724,7 @@ func TestReconcile_CustomProbes(t *testing.T) {
 func TestReconcile_ConfigMapEnvFrom(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "envfrom-test", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testEnvFrom, Namespace: testNamespace},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Config: gatewayv1alpha1.ConfigSpec{
 				ExistingConfigMap: "my-configmap",
@@ -723,11 +735,11 @@ func TestReconcile_ConfigMapEnvFrom(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "envfrom-test", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testEnvFrom, Namespace: testNamespace},
 	})
 
 	dep := &appsv1.Deployment{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "envfrom-test", Namespace: testNamespace}, dep)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testEnvFrom, Namespace: testNamespace}, dep)
 	container := dep.Spec.Template.Spec.Containers[0]
 
 	if len(container.EnvFrom) == 0 {
@@ -751,7 +763,7 @@ func TestReconcile_ConfigMapEnvFrom(t *testing.T) {
 func TestReconcile_NodeOptionsFromMemoryLimit(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "node-opts", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testNodeOpts, Namespace: testNamespace},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
@@ -764,11 +776,11 @@ func TestReconcile_NodeOptionsFromMemoryLimit(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "node-opts", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testNodeOpts, Namespace: testNamespace},
 	})
 
 	dep := &appsv1.Deployment{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "node-opts", Namespace: testNamespace}, dep)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testNodeOpts, Namespace: testNamespace}, dep)
 	container := dep.Spec.Template.Spec.Containers[0]
 
 	var nodeOpts string
@@ -786,18 +798,18 @@ func TestReconcile_NodeOptionsFromMemoryLimit(t *testing.T) {
 func TestReconcile_NoNodeOptionsWithoutMemoryLimit(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "no-node-opts", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testNoNodeOpts, Namespace: testNamespace},
 		Spec:       gatewayv1alpha1.OmniRouteSpec{},
 	}
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "no-node-opts", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testNoNodeOpts, Namespace: testNamespace},
 	})
 
 	dep := &appsv1.Deployment{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "no-node-opts", Namespace: testNamespace}, dep)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testNoNodeOpts, Namespace: testNamespace}, dep)
 	container := dep.Spec.Template.Spec.Containers[0]
 
 	for _, e := range container.Env {
@@ -810,7 +822,7 @@ func TestReconcile_NoNodeOptionsWithoutMemoryLimit(t *testing.T) {
 func TestReconcile_RedisURL(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "redis-test", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testRedis, Namespace: testNamespace},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Redis: &gatewayv1alpha1.RedisSpec{
 				URL:       "redis://redis:6379",
@@ -822,11 +834,11 @@ func TestReconcile_RedisURL(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "redis-test", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testRedis, Namespace: testNamespace},
 	})
 
 	dep := &appsv1.Deployment{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "redis-test", Namespace: testNamespace}, dep)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testRedis, Namespace: testNamespace}, dep)
 	container := dep.Spec.Template.Spec.Containers[0]
 
 	envMap := map[string]string{}
@@ -847,7 +859,7 @@ func TestReconcile_RedisURL(t *testing.T) {
 func TestReconcile_RedisFromSecret(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "redis-secret", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testRedisSecret, Namespace: testNamespace},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Redis: &gatewayv1alpha1.RedisSpec{
 				ExistingSecret: "redis-creds",
@@ -858,11 +870,11 @@ func TestReconcile_RedisFromSecret(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "redis-secret", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testRedisSecret, Namespace: testNamespace},
 	})
 
 	dep := &appsv1.Deployment{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "redis-secret", Namespace: testNamespace}, dep)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testRedisSecret, Namespace: testNamespace}, dep)
 	container := dep.Spec.Template.Spec.Containers[0]
 
 	var found bool
@@ -882,7 +894,7 @@ func TestReconcile_RedisFromSecret(t *testing.T) {
 func TestReconcile_Encryption(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "enc-test", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testEncryption, Namespace: testNamespace},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Encryption: &gatewayv1alpha1.EncryptionSpec{
 				ExistingSecret: "encryption-secret",
@@ -894,11 +906,11 @@ func TestReconcile_Encryption(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "enc-test", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testEncryption, Namespace: testNamespace},
 	})
 
 	dep := &appsv1.Deployment{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "enc-test", Namespace: testNamespace}, dep)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testEncryption, Namespace: testNamespace}, dep)
 	container := dep.Spec.Template.Spec.Containers[0]
 
 	var encKeyFound, encVersionFound bool
@@ -923,7 +935,7 @@ func TestReconcile_Encryption(t *testing.T) {
 func TestReconcile_BasePath(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "basepath-test", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testBasePath, Namespace: testNamespace},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			BasePath: "/omniroute",
 		},
@@ -932,11 +944,11 @@ func TestReconcile_BasePath(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "basepath-test", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testBasePath, Namespace: testNamespace},
 	})
 
 	dep := &appsv1.Deployment{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "basepath-test", Namespace: testNamespace}, dep)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testBasePath, Namespace: testNamespace}, dep)
 	container := dep.Spec.Template.Spec.Containers[0]
 
 	var found bool
@@ -954,7 +966,7 @@ func TestReconcile_IngressCreation(t *testing.T) {
 	scheme := newScheme()
 	className := "nginx"
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "ingress-test", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testIngress, Namespace: testNamespace},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Ingress: &gatewayv1alpha1.IngressSpec{
 				Enabled:   true,
@@ -973,14 +985,14 @@ func TestReconcile_IngressCreation(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "ingress-test", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testIngress, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 
 	ing := &networkingv1.Ingress{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "ingress-test", Namespace: testNamespace}, ing)
+	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: testIngress, Namespace: testNamespace}, ing)
 	if err != nil {
 		t.Fatalf("expected Ingress to be created, got error: %v", err)
 	}
@@ -1002,18 +1014,18 @@ func TestReconcile_IngressCreation(t *testing.T) {
 func TestReconcile_NoIngressByDefault(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "no-ingress", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testNoIngress, Namespace: testNamespace},
 		Spec:       gatewayv1alpha1.OmniRouteSpec{},
 	}
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "no-ingress", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testNoIngress, Namespace: testNamespace},
 	})
 
 	ing := &networkingv1.Ingress{}
-	err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "no-ingress", Namespace: testNamespace}, ing)
+	err := fakeClient.Get(context.Background(), types.NamespacedName{Name: testNoIngress, Namespace: testNamespace}, ing)
 	if !errors.IsNotFound(err) {
 		t.Error("expected no Ingress to be created by default")
 	}
@@ -1022,7 +1034,7 @@ func TestReconcile_NoIngressByDefault(t *testing.T) {
 func TestReconcile_ServiceAnnotations(t *testing.T) {
 	scheme := newScheme()
 	cr := &gatewayv1alpha1.OmniRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "svc-ann", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testServiceAnn, Namespace: testNamespace},
 		Spec: gatewayv1alpha1.OmniRouteSpec{
 			Service: gatewayv1alpha1.ServiceSpec{
 				Annotations: map[string]string{
@@ -1035,11 +1047,11 @@ func TestReconcile_ServiceAnnotations(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
 	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
 	_, _ = r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "svc-ann", Namespace: testNamespace},
+		NamespacedName: types.NamespacedName{Name: testServiceAnn, Namespace: testNamespace},
 	})
 
 	svc := &corev1.Service{}
-	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "svc-ann", Namespace: testNamespace}, svc)
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testServiceAnn, Namespace: testNamespace}, svc)
 
 	if svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] != "nlb" {
 		t.Error("expected Service annotation for AWS NLB")
@@ -1057,16 +1069,16 @@ func TestProbePaths(t *testing.T) {
 		{
 			"nil probes",
 			nil,
-			"/api/monitoring/health",
-			"/api/monitoring/health",
-			"/api/monitoring/health",
+			defaultHealthPath,
+			defaultHealthPath,
+			defaultHealthPath,
 		},
 		{
 			"partial override",
 			&gatewayv1alpha1.ProbesSpec{LivenessPath: "/custom"},
 			"/custom",
-			"/api/monitoring/health",
-			"/api/monitoring/health",
+			defaultHealthPath,
+			defaultHealthPath,
 		},
 		{
 			"full override",

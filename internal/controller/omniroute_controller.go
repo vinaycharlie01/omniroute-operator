@@ -48,6 +48,7 @@ const (
 	finalizerName       = "gateway.omniroute.ai/finalizer"
 	defaultHealthPath   = "/api/monitoring/health"
 	defaultLivenessPath = "/api/monitoring/health"
+	envRedisURL         = "REDIS_URL"
 )
 
 // OmniRouteReconciler reconciles a OmniRoute object
@@ -545,19 +546,19 @@ func buildEnvVars(cr *gatewayv1alpha1.OmniRoute, port int32) []corev1.EnvVar {
 	if cr.Spec.Redis != nil {
 		if cr.Spec.Redis.ExistingSecret != "" {
 			envs = append(envs, corev1.EnvVar{
-				Name: "REDIS_URL",
+				Name: envRedisURL,
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: cr.Spec.Redis.ExistingSecret,
 						},
-						Key: "REDIS_URL",
+						Key: envRedisURL,
 					},
 				},
 			})
 		} else if cr.Spec.Redis.URL != "" {
 			envs = append(envs, corev1.EnvVar{
-				Name:  "REDIS_URL",
+				Name:  envRedisURL,
 				Value: cr.Spec.Redis.URL,
 			})
 		}
