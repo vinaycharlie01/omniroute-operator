@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/vinaycharlie01/omniroute-operator
-  tag: ""
+  tag: "0.1.1"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -22,11 +22,11 @@ leaderElection:
 
 resources:
   limits:
-    cpu: 500m
+    cpu: 200m
     memory: 128Mi
   requests:
-    cpu: 10m
-    memory: 64Mi
+    cpu: 5m
+    memory: 32Mi
 
 nodeSelector: {}
 tolerations: []

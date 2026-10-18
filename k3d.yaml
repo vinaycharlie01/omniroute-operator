@@ -6,6 +6,8 @@ cluster:
     - "20128:20128@server:0"
   k3sArgs:
     - "--disable=traefik@server:0"
+  # Registry config for corporate/VPN TLS proxy environments
+  registryConfig: registries.yaml
 
 infrastructure:
   kustomizePath: config/k3d/infrastructure

@@ -18,18 +18,19 @@ spec:
     annotations: {}
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 50m
+      memory: 128Mi
     limits:
-      cpu: "1"
-      memory: 1Gi
+      cpu: 250m
+      memory: 256Mi
   config:
     existingConfigMap: omniroute-config
   credentials:
     existingSecret: omniroute-secrets
   persistence:
     enabled: true
-    size: 1Gi
+    size: 256Mi
+    storageClass: local-path
     accessMode: ReadWriteOnce
   probes:
     livenessPath: /api/monitoring/health

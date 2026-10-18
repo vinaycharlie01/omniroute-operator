@@ -42,6 +42,18 @@ rules:
       - update
       - watch
   - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
       - gateway.omniroute.ai
     resources:
       - omniroutes
@@ -139,3 +151,4 @@ subjects:
     name: {{ include "omniroute-operator.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}
+

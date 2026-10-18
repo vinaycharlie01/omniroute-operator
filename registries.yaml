@@ -1,0 +1,51 @@
+# k3s registries configuration — corporate/VPN TLS proxy workaround
+#
+# k3s reads this file at startup and converts it into containerd hosts.toml
+# entries under /var/lib/rancher/k3s/agent/etc/containerd/certs.d/<registry>/
+#
+# This is required on networks that use a TLS-intercepting proxy (corporate
+# VPN, Zscaler, etc.) whose CA is not trusted by the k3s node's built-in
+# certificate bundle.
+#
+# k3d mounts this file into every node at cluster creation time via:
+#   k3d cluster create --registry-config registries.yaml
+#
+# The cluster.registryConfig field in k3d.yaml references this file so that
+# `mage k3d:create` picks it up automatically.
+#
+# HOW IT WORKS (k3s v1.31+ / containerd v2):
+#   k3s parses mirrors + configs together and writes per-registry hosts.toml
+#   files. The insecure_skip_verify flag is honoured — k3s sets skip_verify=true
+#   in the generated hosts.toml, which containerd v2 reads at pull time.
+#
+# SECURITY NOTE: insecure_skip_verify: true disables TLS certificate validation
+# for these registries. This is intentional for local dev/demo environments only.
+# Do NOT use this in production.
+
+mirrors:
+  "registry.k8s.io":
+    endpoint:
+      - "https://registry.k8s.io"
+  "docker.io":
+    endpoint:
+      - "https://registry-1.docker.io"
+  "ghcr.io":
+    endpoint:
+      - "https://ghcr.io"
+  "quay.io":
+    endpoint:
+      - "https://quay.io"
+
+configs:
+  "registry.k8s.io":
+    tls:
+      insecure_skip_verify: true
+  "registry-1.docker.io":
+    tls:
+      insecure_skip_verify: true
+  "ghcr.io":
+    tls:
+      insecure_skip_verify: true
+  "quay.io":
+    tls:
+      insecure_skip_verify: true
