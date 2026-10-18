@@ -15,6 +15,7 @@ spec:
   service:
     type: ClusterIP
     port: 20128
+    annotations: {}
   resources:
     requests:
       cpu: 250m
@@ -22,9 +23,33 @@ spec:
     limits:
       cpu: "1"
       memory: 1Gi
+  config:
+    existingConfigMap: omniroute-config
   credentials:
     existingSecret: omniroute-secrets
   persistence:
     enabled: true
     size: 1Gi
     accessMode: ReadWriteOnce
+  probes:
+    livenessPath: /api/monitoring/health
+    readinessPath: /api/monitoring/health
+    startupPath: /api/monitoring/health
+  # basePath: "/omniroute"
+  # env:
+  #   - name: APP_LOG_LEVEL
+  #     value: "info"
+  # ingress:
+  #   enabled: true
+  #   className: nginx
+  #   host: omniroute.example.com
+  #   annotations:
+  #     cert-manager.io/cluster-issuer: letsencrypt-prod
+  #   tls:
+  #     secretName: omniroute-tls
+  # redis:
+  #   url: redis://redis:6379
+  #   keyPrefix: "omniroute:"
+  # encryption:
+  #   existingSecret: omniroute-encryption-key
+  #   keyVersion: "1"

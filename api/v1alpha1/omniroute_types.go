@@ -45,6 +45,7 @@ type OmniRouteSpec struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Config references an existing ConfigMap containing OmniRoute environment variables.
+	// All keys in the ConfigMap are injected as environment variables via envFrom.
 	// +optional
 	Config ConfigSpec `json:"config,omitempty"`
 
@@ -56,6 +57,26 @@ type OmniRouteSpec struct {
 	// Persistence configures the PersistentVolumeClaim for OmniRoute's SQLite data directory.
 	// +optional
 	Persistence PersistenceSpec `json:"persistence,omitempty"`
+
+	// Probes configures the health check probes for the OmniRoute container.
+	// +optional
+	Probes *ProbesSpec `json:"probes,omitempty"`
+
+	// Ingress configures an optional Ingress resource for external access.
+	// +optional
+	Ingress *IngressSpec `json:"ingress,omitempty"`
+
+	// Redis configures an optional Redis connection for rate limiting.
+	// +optional
+	Redis *RedisSpec `json:"redis,omitempty"`
+
+	// Encryption configures database encryption at rest.
+	// +optional
+	Encryption *EncryptionSpec `json:"encryption,omitempty"`
+
+	// BasePath sets the OMNIROUTE_BASE_PATH for reverse proxy deployments (e.g. "/omniroute").
+	// +optional
+	BasePath string `json:"basePath,omitempty"`
 
 	// Env allows setting additional environment variables on the OmniRoute container.
 	// +optional
@@ -95,11 +116,16 @@ type ServiceSpec struct {
 	// +kubebuilder:validation:Maximum=65535
 	// +optional
 	Port int32 `json:"port,omitempty"`
+
+	// Annotations are additional annotations to add to the Service.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // ConfigSpec references an existing ConfigMap.
 type ConfigSpec struct {
 	// ExistingConfigMap is the name of an existing ConfigMap with OmniRoute env vars.
+	// All keys are injected as environment variables via envFrom.
 	// +optional
 	ExistingConfigMap string `json:"existingConfigMap,omitempty"`
 }
@@ -108,6 +134,7 @@ type ConfigSpec struct {
 type CredentialsSpec struct {
 	// ExistingSecret is the name of an existing Secret containing JWT_SECRET,
 	// API_KEY_SECRET, and INITIAL_PASSWORD keys.
+	// Additional keys like STORAGE_ENCRYPTION_KEY are also injected if present.
 	// +optional
 	ExistingSecret string `json:"existingSecret,omitempty"`
 }
@@ -134,6 +161,80 @@ type PersistenceSpec struct {
 	// +kubebuilder:validation:Enum=ReadWriteOnce;ReadWriteMany;ReadOnlyMany
 	// +optional
 	AccessMode corev1.PersistentVolumeAccessMode `json:"accessMode,omitempty"`
+}
+
+// ProbesSpec configures health check probes.
+type ProbesSpec struct {
+	// LivenessPath is the HTTP path for the liveness probe.
+	// +kubebuilder:default="/api/monitoring/health"
+	// +optional
+	LivenessPath string `json:"livenessPath,omitempty"`
+
+	// ReadinessPath is the HTTP path for the readiness probe.
+	// +kubebuilder:default="/api/monitoring/health"
+	// +optional
+	ReadinessPath string `json:"readinessPath,omitempty"`
+
+	// StartupPath is the HTTP path for the startup probe.
+	// +kubebuilder:default="/api/monitoring/health"
+	// +optional
+	StartupPath string `json:"startupPath,omitempty"`
+}
+
+// IngressSpec configures the Ingress resource.
+type IngressSpec struct {
+	// Enabled controls whether an Ingress resource is created.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ClassName is the IngressClass to use.
+	// +optional
+	ClassName *string `json:"className,omitempty"`
+
+	// Host is the hostname for the Ingress rule.
+	// +optional
+	Host string `json:"host,omitempty"`
+
+	// TLS configures TLS for the Ingress.
+	// +optional
+	TLS *IngressTLSSpec `json:"tls,omitempty"`
+
+	// Annotations are additional annotations for the Ingress.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// IngressTLSSpec configures TLS for the Ingress.
+type IngressTLSSpec struct {
+	// SecretName is the name of the TLS Secret.
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
+}
+
+// RedisSpec configures Redis for rate limiting.
+type RedisSpec struct {
+	// URL is the Redis connection URL (e.g. redis://redis:6379).
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// ExistingSecret is the name of a Secret containing a REDIS_URL key.
+	// +optional
+	ExistingSecret string `json:"existingSecret,omitempty"`
+
+	// KeyPrefix is the Redis key namespace prefix.
+	// +optional
+	KeyPrefix string `json:"keyPrefix,omitempty"`
+}
+
+// EncryptionSpec configures database encryption at rest.
+type EncryptionSpec struct {
+	// ExistingSecret is the name of a Secret containing a STORAGE_ENCRYPTION_KEY key.
+	// +optional
+	ExistingSecret string `json:"existingSecret,omitempty"`
+
+	// KeyVersion is the encryption key version for key rotation.
+	// +optional
+	KeyVersion string `json:"keyVersion,omitempty"`
 }
 
 // ConditionType represents the type of an OmniRoute condition.

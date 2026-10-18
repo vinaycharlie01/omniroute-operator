@@ -22,7 +22,9 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -43,12 +45,25 @@ const (
 	testDefaultImage = "diegosouzapw/omniroute:3.8.51"
 	testMinimalName  = "minimal"
 	testSecretName   = "with-secrets"
+	testProbe        = "probe-test"
+	testCustomProbe  = "custom-probe"
+	testEnvFrom      = "envfrom-test"
+	testNodeOpts     = "node-opts"
+	testNoNodeOpts   = "no-node-opts"
+	testRedis        = "redis-test"
+	testRedisSecret  = "redis-secret"
+	testEncryption   = "enc-test"
+	testBasePath     = "basepath-test"
+	testIngress      = "ingress-test"
+	testNoIngress    = "no-ingress"
+	testServiceAnn   = "svc-ann"
 )
 
 func newScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(s))
 	utilruntime.Must(gatewayv1alpha1.AddToScheme(s))
+	utilruntime.Must(networkingv1.AddToScheme(s))
 	return s
 }
 
@@ -157,11 +172,11 @@ func TestReconcile_CreatesDeploymentAndService(t *testing.T) {
 	if container.StartupProbe == nil {
 		t.Error("expected StartupProbe to be set")
 	}
-	if container.LivenessProbe.HTTPGet.Path != "/livez" {
-		t.Errorf("LivenessProbe path = %q, want /livez", container.LivenessProbe.HTTPGet.Path)
+	if container.LivenessProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("LivenessProbe path = %q, want %s", container.LivenessProbe.HTTPGet.Path, defaultHealthPath)
 	}
-	if container.ReadinessProbe.HTTPGet.Path != "/healthz" {
-		t.Errorf("ReadinessProbe path = %q, want /healthz", container.ReadinessProbe.HTTPGet.Path)
+	if container.ReadinessProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("ReadinessProbe path = %q, want %s", container.ReadinessProbe.HTTPGet.Path, defaultHealthPath)
 	}
 
 	podSpec := dep.Spec.Template.Spec
@@ -638,5 +653,477 @@ func TestServicePort(t *testing.T) {
 	cr.Spec.Service.Port = 8080
 	if servicePort(cr) != 8080 {
 		t.Errorf("custom servicePort() = %d, want 8080", servicePort(cr))
+	}
+}
+
+func TestReconcile_DefaultHealthProbes(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testProbe, Namespace: testNamespace},
+		Spec:       gatewayv1alpha1.OmniRouteSpec{},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testProbe, Namespace: testNamespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testProbe, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	if container.LivenessProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("default liveness path = %q, want %s", container.LivenessProbe.HTTPGet.Path, defaultHealthPath)
+	}
+	if container.ReadinessProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("default readiness path = %q, want %s", container.ReadinessProbe.HTTPGet.Path, defaultHealthPath)
+	}
+	if container.StartupProbe.HTTPGet.Path != defaultHealthPath {
+		t.Errorf("default startup path = %q, want %s", container.StartupProbe.HTTPGet.Path, defaultHealthPath)
+	}
+}
+
+func TestReconcile_CustomProbes(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testCustomProbe, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Probes: &gatewayv1alpha1.ProbesSpec{
+				LivenessPath:  "/custom/livez",
+				ReadinessPath: "/custom/readyz",
+				StartupPath:   "/custom/startupz",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testCustomProbe, Namespace: testNamespace},
+	})
+
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testCustomProbe, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	if container.LivenessProbe.HTTPGet.Path != "/custom/livez" {
+		t.Errorf("liveness path = %q, want /custom/livez", container.LivenessProbe.HTTPGet.Path)
+	}
+	if container.ReadinessProbe.HTTPGet.Path != "/custom/readyz" {
+		t.Errorf("readiness path = %q, want /custom/readyz", container.ReadinessProbe.HTTPGet.Path)
+	}
+	if container.StartupProbe.HTTPGet.Path != "/custom/startupz" {
+		t.Errorf("startup path = %q, want /custom/startupz", container.StartupProbe.HTTPGet.Path)
+	}
+}
+
+func TestReconcile_ConfigMapEnvFrom(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testEnvFrom, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Config: gatewayv1alpha1.ConfigSpec{
+				ExistingConfigMap: "my-configmap",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testEnvFrom, Namespace: testNamespace},
+	})
+
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testEnvFrom, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	if len(container.EnvFrom) == 0 {
+		t.Fatal("expected envFrom to be set")
+	}
+	if container.EnvFrom[0].ConfigMapRef == nil {
+		t.Fatal("expected configMapRef in envFrom")
+	}
+	if container.EnvFrom[0].ConfigMapRef.Name != "my-configmap" {
+		t.Errorf("configMapRef name = %q, want my-configmap", container.EnvFrom[0].ConfigMapRef.Name)
+	}
+
+	// Verify no single-key OMNIROUTE_CONFIG_LOADED env var exists.
+	for _, e := range container.Env {
+		if e.Name == "OMNIROUTE_CONFIG_LOADED" {
+			t.Error("found OMNIROUTE_CONFIG_LOADED env — should use envFrom instead")
+		}
+	}
+}
+
+func TestReconcile_NodeOptionsFromMemoryLimit(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testNodeOpts, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testNodeOpts, Namespace: testNamespace},
+	})
+
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testNodeOpts, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	var nodeOpts string
+	for _, e := range container.Env {
+		if e.Name == "NODE_OPTIONS" {
+			nodeOpts = e.Value
+		}
+	}
+	// 1Gi = 1024 MB, 75% = 768 MB
+	if nodeOpts != "--max-old-space-size=768" {
+		t.Errorf("NODE_OPTIONS = %q, want --max-old-space-size=768", nodeOpts)
+	}
+}
+
+func TestReconcile_NoNodeOptionsWithoutMemoryLimit(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testNoNodeOpts, Namespace: testNamespace},
+		Spec:       gatewayv1alpha1.OmniRouteSpec{},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testNoNodeOpts, Namespace: testNamespace},
+	})
+
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testNoNodeOpts, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	for _, e := range container.Env {
+		if e.Name == "NODE_OPTIONS" {
+			t.Error("NODE_OPTIONS should not be set without memory limit")
+		}
+	}
+}
+
+func TestReconcile_RedisURL(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testRedis, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Redis: &gatewayv1alpha1.RedisSpec{
+				URL:       "redis://redis:6379",
+				KeyPrefix: "omniroute:",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testRedis, Namespace: testNamespace},
+	})
+
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testRedis, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	envMap := map[string]string{}
+	for _, e := range container.Env {
+		if e.Value != "" {
+			envMap[e.Name] = e.Value
+		}
+	}
+
+	if envMap["REDIS_URL"] != "redis://redis:6379" {
+		t.Errorf("REDIS_URL = %q, want redis://redis:6379", envMap["REDIS_URL"])
+	}
+	if envMap["REDIS_KEY_PREFIX"] != "omniroute:" {
+		t.Errorf("REDIS_KEY_PREFIX = %q, want omniroute:", envMap["REDIS_KEY_PREFIX"])
+	}
+}
+
+func TestReconcile_RedisFromSecret(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testRedisSecret, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Redis: &gatewayv1alpha1.RedisSpec{
+				ExistingSecret: "redis-creds",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testRedisSecret, Namespace: testNamespace},
+	})
+
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testRedisSecret, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	var found bool
+	for _, e := range container.Env {
+		if e.Name == "REDIS_URL" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+			if e.ValueFrom.SecretKeyRef.Name != "redis-creds" {
+				t.Errorf("REDIS_URL secret ref = %q, want redis-creds", e.ValueFrom.SecretKeyRef.Name)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("REDIS_URL from secret not found")
+	}
+}
+
+func TestReconcile_Encryption(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testEncryption, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Encryption: &gatewayv1alpha1.EncryptionSpec{
+				ExistingSecret: "encryption-secret",
+				KeyVersion:     "2",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testEncryption, Namespace: testNamespace},
+	})
+
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testEncryption, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	var encKeyFound, encVersionFound bool
+	for _, e := range container.Env {
+		if e.Name == "STORAGE_ENCRYPTION_KEY" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+			if e.ValueFrom.SecretKeyRef.Name == "encryption-secret" {
+				encKeyFound = true
+			}
+		}
+		if e.Name == "STORAGE_ENCRYPTION_KEY_VERSION" && e.Value == "2" {
+			encVersionFound = true
+		}
+	}
+	if !encKeyFound {
+		t.Error("STORAGE_ENCRYPTION_KEY from secret not found")
+	}
+	if !encVersionFound {
+		t.Error("STORAGE_ENCRYPTION_KEY_VERSION not found")
+	}
+}
+
+func TestReconcile_BasePath(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testBasePath, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			BasePath: "/omniroute",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testBasePath, Namespace: testNamespace},
+	})
+
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testBasePath, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	var found bool
+	for _, e := range container.Env {
+		if e.Name == "OMNIROUTE_BASE_PATH" && e.Value == "/omniroute" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("OMNIROUTE_BASE_PATH not set")
+	}
+}
+
+func TestReconcile_IngressCreation(t *testing.T) {
+	scheme := newScheme()
+	className := "nginx"
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testIngress, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Ingress: &gatewayv1alpha1.IngressSpec{
+				Enabled:   true,
+				ClassName: &className,
+				Host:      "omniroute.example.com",
+				TLS: &gatewayv1alpha1.IngressTLSSpec{
+					SecretName: "tls-secret",
+				},
+				Annotations: map[string]string{
+					"nginx.ingress.kubernetes.io/rewrite-target": "/",
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testIngress, Namespace: testNamespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	ing := &networkingv1.Ingress{}
+	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: testIngress, Namespace: testNamespace}, ing)
+	if err != nil {
+		t.Fatalf("expected Ingress to be created, got error: %v", err)
+	}
+
+	if *ing.Spec.IngressClassName != "nginx" {
+		t.Errorf("IngressClassName = %q, want nginx", *ing.Spec.IngressClassName)
+	}
+	if ing.Spec.Rules[0].Host != "omniroute.example.com" {
+		t.Errorf("Ingress host = %q, want omniroute.example.com", ing.Spec.Rules[0].Host)
+	}
+	if len(ing.Spec.TLS) == 0 || ing.Spec.TLS[0].SecretName != "tls-secret" {
+		t.Error("expected TLS with tls-secret")
+	}
+	if ing.Annotations["nginx.ingress.kubernetes.io/rewrite-target"] != "/" {
+		t.Error("expected nginx rewrite annotation")
+	}
+}
+
+func TestReconcile_NoIngressByDefault(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testNoIngress, Namespace: testNamespace},
+		Spec:       gatewayv1alpha1.OmniRouteSpec{},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testNoIngress, Namespace: testNamespace},
+	})
+
+	ing := &networkingv1.Ingress{}
+	err := fakeClient.Get(context.Background(), types.NamespacedName{Name: testNoIngress, Namespace: testNamespace}, ing)
+	if !errors.IsNotFound(err) {
+		t.Error("expected no Ingress to be created by default")
+	}
+}
+
+func TestReconcile_ServiceAnnotations(t *testing.T) {
+	scheme := newScheme()
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testServiceAnn, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Service: gatewayv1alpha1.ServiceSpec{
+				Annotations: map[string]string{
+					"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, _ = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testServiceAnn, Namespace: testNamespace},
+	})
+
+	svc := &corev1.Service{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testServiceAnn, Namespace: testNamespace}, svc)
+
+	if svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] != "nlb" {
+		t.Error("expected Service annotation for AWS NLB")
+	}
+}
+
+func TestProbePaths(t *testing.T) {
+	tests := []struct {
+		name      string
+		probes    *gatewayv1alpha1.ProbesSpec
+		wantLive  string
+		wantReady string
+		wantStart string
+	}{
+		{
+			"nil probes",
+			nil,
+			defaultHealthPath,
+			defaultHealthPath,
+			defaultHealthPath,
+		},
+		{
+			"partial override",
+			&gatewayv1alpha1.ProbesSpec{LivenessPath: "/custom"},
+			"/custom",
+			defaultHealthPath,
+			defaultHealthPath,
+		},
+		{
+			"full override",
+			&gatewayv1alpha1.ProbesSpec{
+				LivenessPath:  "/live",
+				ReadinessPath: "/ready",
+				StartupPath:   "/start",
+			},
+			"/live",
+			"/ready",
+			"/start",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cr := &gatewayv1alpha1.OmniRoute{
+				Spec: gatewayv1alpha1.OmniRouteSpec{Probes: tt.probes},
+			}
+			live, ready, start := probePaths(cr)
+			if live != tt.wantLive {
+				t.Errorf("liveness = %q, want %q", live, tt.wantLive)
+			}
+			if ready != tt.wantReady {
+				t.Errorf("readiness = %q, want %q", ready, tt.wantReady)
+			}
+			if start != tt.wantStart {
+				t.Errorf("startup = %q, want %q", start, tt.wantStart)
+			}
+		})
+	}
+}
+
+func TestBuildEnvFrom(t *testing.T) {
+	cr := &gatewayv1alpha1.OmniRoute{Spec: gatewayv1alpha1.OmniRouteSpec{}}
+	if envFrom := buildEnvFrom(cr); envFrom != nil {
+		t.Error("expected nil envFrom when no configmap set")
+	}
+
+	cr.Spec.Config.ExistingConfigMap = "my-cm"
+	envFrom := buildEnvFrom(cr)
+	if len(envFrom) != 1 {
+		t.Fatalf("expected 1 envFrom, got %d", len(envFrom))
+	}
+	if envFrom[0].ConfigMapRef.Name != "my-cm" {
+		t.Errorf("configMapRef name = %q, want my-cm", envFrom[0].ConfigMapRef.Name)
 	}
 }
