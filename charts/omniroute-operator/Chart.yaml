@@ -15,3 +15,20 @@ sources:
   - https://github.com/vinaycharlie01/omniroute-operator
 maintainers:
   - name: vinaycharlie01
+    email: vinaykumaree5@gmail.com
+icon: https://raw.githubusercontent.com/vinaycharlie01/omniroute-operator/main/docs/logo.png
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/operator: "true"
+  artifacthub.io/operatorCapabilities: Seamless Upgrades
+  artifacthub.io/crds: |
+    - kind: OmniRoute
+      version: v1alpha1
+      name: omniroutes.gateway.omniroute.ai
+      displayName: OmniRoute
+      description: Deploys and manages an OmniRoute AI gateway instance
+  artifacthub.io/links: |
+    - name: GitHub
+      url: https://github.com/vinaycharlie01/omniroute-operator
+    - name: OmniRoute Upstream
+      url: https://github.com/diegosouzapw/OmniRoute
