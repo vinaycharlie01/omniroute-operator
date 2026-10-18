@@ -7,6 +7,8 @@ on:
     paths:
       - "artifacthub-repo.yml"
       - "charts/omniroute-operator/Chart.yaml"
+      - ".github/workflows/artifacthub.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
