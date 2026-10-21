@@ -16,43 +16,47 @@ env:
 
 jobs:
   lint:
-    name: Lint
+    name: 🛑 Lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: golangci-lint
+      - name: 🔍 Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.14.0
           args: --timeout=10m
 
   test:
-    name: Unit Tests
+    name: 🧪 Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Test
+      - name: 🚀 Run tests
         run: task test
-      - name: Upload test results
+      - name: 📤 Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -60,93 +64,101 @@ jobs:
           path: "*.xml"
 
   race:
-    name: Race Tests
+    name: 🏃 Race Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Race
+      - name: 🏃 Run race tests
         run: task race
 
   coverage:
-    name: Coverage
+    name: 📊 Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Coverage
+      - name: 📈 Run coverage
         run: task coverage
-      - name: Upload coverage
+      - name: 📤 Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           files: coverage.out
           fail_ci_if_error: false
 
   integration-test:
-    name: Integration Tests
+    name: 🧩 Integration Tests
     runs-on: ubuntu-latest
     needs: [test]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run integration tests
+      - name: 🔌 Run integration tests
         run: task integration
 
   security:
-    name: Security Scan
+    name: 🛡️ Security Scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache govulncheck
+      - name: 💾 Cache govulncheck
         id: cache-govulncheck
         uses: actions/cache@v4
         with:
           path: ~/go/bin/govulncheck
           key: govulncheck-${{ runner.os }}-${{ hashFiles('go.sum') }}
-      - name: Install govulncheck
+      - name: 📥 Install govulncheck
         if: steps.cache-govulncheck.outputs.cache-hit != 'true'
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: govulncheck
+      - name: 🔍 Run govulncheck
         continue-on-error: true
         run: task govulncheck
-      - name: Trivy filesystem scan
+      - name: 🛡️ Trivy filesystem scan
         if: always()
         uses: aquasecurity/trivy-action@master
         with:
@@ -155,7 +167,7 @@ jobs:
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
-      - name: Upload Trivy results
+      - name: 📤 Upload Trivy results
         uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('trivy-results.sarif') != ''
         continue-on-error: true
@@ -163,72 +175,78 @@ jobs:
           sarif_file: "trivy-results.sarif"
 
   generate:
-    name: Verify Generated Code
+    name: ⚙️ Verify Generated Code
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install controller-gen
+      - name: 📥 Install controller-gen
         run: go install sigs.k8s.io/controller-tools/cmd/controller-gen@${{ env.CONTROLLER_GEN_VERSION }}
-      - name: Verify generated code
+      - name: ✅ Verify generated code
         run: task verify-generate
 
   build:
-    name: Build
+    name: 📦 Build
     runs-on: ubuntu-latest
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build binary
+      - name: 🔨 Build binary
         run: task build
-      - name: Upload binary
+      - name: 📤 Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: omniroute-operator-binary
           path: bin/manager
 
   helm-lint:
-    name: Helm Lint
+    name: ⚓ Helm Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install Helm
+      - name: ⛵ Install Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.17.3
-      - name: Helm lint
+      - name: ⚓ Helm lint
         run: task helm-lint
 
   helm-release:
-    name: Helm Release
+    name: 🚢 Helm Release
     runs-on: ubuntu-latest
     needs: [lint, test, helm-lint]
     if: startsWith(github.ref, 'refs/tags/v')
@@ -236,70 +254,74 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install Helm
+      - name: ⛵ Install Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.17.3
-      - name: Log in to GHCR OCI registry
+      - name: 🔑 Log in to GHCR OCI registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
-      - name: Package and push Helm chart
+      - name: 🚀 Package and push Helm chart
         run: task helm-push
-      - name: Install ORAS
+      - name: 📦 Install ORAS
         uses: oras-project/setup-oras@v1
         with:
           version: "1.2.2"
-      - name: Login to GHCR for ORAS
+      - name: 🔑 Login to GHCR for ORAS
         run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - name: Push Artifact Hub metadata
+      - name: 📤 Push Artifact Hub metadata
         run: |
           oras push ghcr.io/vinaycharlie01/helm-charts/omniroute-operator:artifacthub.io \
             --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
             artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
 
   container:
-    name: Container Build
+    name: 🐳 Container Build
     runs-on: ubuntu-latest
     needs: [lint, test]
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - name: 🐹 Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Setup Task
+      - name: 🎯 Setup Task
         uses: arduino/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build linux binaries
+      - name: 🔨 Build linux binaries
         run: task build-linux
-      - name: Set up QEMU
+      - name: 🌍 Set up QEMU
         uses: docker/setup-qemu-action@v3
-      - name: Set up Docker Buildx
+      - name: 🏗️ Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Log in to GHCR
+      - name: 🔑 Log in to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract metadata
+      - name: 🏷️ Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -310,7 +332,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
-      - name: Build and push
+      - name: 🚀 Build and push container
         uses: docker/build-push-action@v6
         with:
           context: .
