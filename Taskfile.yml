@@ -24,9 +24,9 @@ tasks:
   build-linux:
     desc: Cross-compile linux/amd64 and linux/arm64 manager binaries
     cmds:
-      - mkdir -p {{.DIST_DIR}}
-      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o {{.DIST_DIR}}/manager-linux-amd64 ./cmd/
-      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o {{.DIST_DIR}}/manager-linux-arm64 ./cmd/
+      - mkdir -p {{.DIST_DIR}}/linux_amd64 {{.DIST_DIR}}/linux_arm64
+      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o {{.DIST_DIR}}/linux_amd64/{{.BINARY_NAME}} ./cmd/
+      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o {{.DIST_DIR}}/linux_arm64/{{.BINARY_NAME}} ./cmd/
 
   test:
     desc: Run unit tests
