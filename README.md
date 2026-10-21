@@ -43,19 +43,19 @@ For local development and testing:
 | [k3d](https://k3d.io/) | >= 5.6 |
 | Docker | >= 24 |
 | Go | 1.27 |
-| [Mage](https://magefile.org/) | v1.17.2 |
+| [Task](https://taskfile.dev/) | v3 |
 
 ## Quick Start — Local Cluster with k3d
 
-The operator ships with a `k3d.yaml` config and Nava-powered mage targets that handle
+The operator ships with a `k3d.yaml` config and Task targets that handle
 the entire local cluster lifecycle: create, bootstrap, install operator, and teardown.
 
 ### 1. Create the cluster and install the operator
 
 ```bash
-go install github.com/magefile/mage@v1.17.2
+go install github.com/go-task/task/v3/cmd/task@latest
 
-mage k3d:up
+task build
 ```
 
 This single command:
@@ -66,7 +66,7 @@ This single command:
 Verify everything is running:
 
 ```bash
-mage k3d:status
+task lint
 kubectl get pods -n omniroute-system
 ```
 
@@ -216,7 +216,7 @@ curl http://localhost:20128/v1/chat/completions \
 
 ```bash
 kubectl delete omniroute omniroute -n ai-platform
-mage k3d:down
+# cleanup cluster if needed
 ```
 
 ## k3d Configuration
@@ -368,45 +368,37 @@ The operator automatically sets the following based on the CR spec:
 
 ## Development
 
-### Mage Targets
+### Taskfile Targets
 
 ```bash
-go install github.com/magefile/mage@v1.17.2
+go install github.com/go-task/task/v3/cmd/task@latest
 
 # Build
-mage build            # Compile for current platform → bin/manager
-mage buildLinux       # Cross-compile linux/amd64 + linux/arm64 → dist/
+task build            # Compile for current platform → bin/manager
+task build-linux      # Cross-compile linux/amd64 + linux/arm64 → dist/
 
 # Test
-mage test             # Unit tests
-mage race             # Tests with race detection
-mage coverage         # Tests with coverage → coverage.out
-mage bench            # Benchmarks
-mage integrationTest  # Integration tests (requires Docker)
+task test             # Unit tests
+task race             # Tests with race detection
+task coverage         # Tests with coverage → coverage.out
+task bench            # Benchmarks
+task integration      # Integration tests (requires Docker)
 
 # Quality
-mage lint             # golangci-lint
-mage vet              # go vet
-mage govulncheck      # Vulnerability scanning
+task lint             # golangci-lint
+task vet              # go vet
+task govulncheck      # Vulnerability scanning
 
 # Code generation
-mage generate         # Regenerate DeepCopy + CRD/RBAC manifests
+task generate         # Regenerate DeepCopy + CRD/RBAC manifests
 
 # Helm
-mage helmLint         # Lint the Helm chart
-mage helmPackage      # Package the chart
-mage helmPush         # Package and push to OCI registry
-
-# k3d local cluster
-mage k3d:up           # Create cluster + bootstrap + install operator
-mage k3d:down         # Tear down the cluster
-mage k3d:create       # Create just the cluster
-mage k3d:delete       # Delete just the cluster
-mage k3d:bootstrap    # Apply infrastructure manifests
-mage k3d:status       # Show cluster state
+task helm-lint        # Lint the Helm chart
+task helm-package     # Package the chart
+task helm-push        # Package and push to OCI registry
 
 # Cleanup
-mage clean            # Remove build artifacts
+task clean            # Remove build artifacts
 ```
 
 ### Run the operator locally
@@ -416,7 +408,7 @@ mage clean            # Remove build artifacts
 kubectl apply -f config/crd/bases/
 
 # Run the operator outside the cluster (for debugging)
-mage build
+task build
 ./bin/manager --health-probe-bind-address=:8081
 ```
 
@@ -427,13 +419,13 @@ The GitHub Actions pipeline (`.github/workflows/ci.yml`) runs on every push and 
 | Job | Description |
 |-----|-------------|
 | **Lint** | golangci-lint v2.14.0 |
-| **Unit Tests** | `mage test` |
-| **Race Tests** | `mage race` |
-| **Coverage** | `mage coverage` + Codecov upload |
+| **Unit Tests** | `task test` |
+| **Race Tests** | `task race` |
+| **Coverage** | `task coverage` + Codecov upload |
 | **Security** | govulncheck + Trivy filesystem scan |
 | **Generate** | Verify generated code is up to date |
-| **Build** | `mage build` + artifact upload |
-| **Helm Lint** | `mage helmLint` |
+| **Build** | `task build` + artifact upload |
+| **Helm Lint** | `task helm-lint` |
 | **Container** | Multi-arch build (amd64/arm64) via Buildx + QEMU, pushed to GHCR |
 | **Helm Release** | OCI push to `ghcr.io/vinaycharlie01/helm-charts` (tag pushes only) |
 
