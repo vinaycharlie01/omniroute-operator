@@ -1,0 +1,105 @@
+version: '3'
+
+vars:
+  BINARY_NAME: manager
+  DIST_DIR: dist
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  GIT_COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo unknown
+
+tasks:
+  default:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  build:
+    desc: Build operator binary for current platform
+    cmds:
+      - mkdir -p bin
+      - go build -trimpath -o bin/{{.BINARY_NAME}} ./cmd/
+
+  build-linux:
+    desc: Cross-compile linux/amd64 and linux/arm64 manager binaries
+    cmds:
+      - mkdir -p {{.DIST_DIR}}
+      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o {{.DIST_DIR}}/manager-linux-amd64 ./cmd/
+      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o {{.DIST_DIR}}/manager-linux-arm64 ./cmd/
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test -v -short -timeout=120s ./...
+
+  race:
+    desc: Run tests with race detector
+    cmds:
+      - go test -race -short -timeout=120s ./...
+
+  coverage:
+    desc: Run tests with coverage profiling
+    cmds:
+      - go test -coverprofile=coverage.out -timeout=120s ./api/... ./internal/controller/...
+
+  bench:
+    desc: Run benchmarks
+    cmds:
+      - go test -bench=. -benchmem -timeout=120s ./...
+
+  integration:
+    desc: Run integration tests
+    env:
+      INTEGRATION: "1"
+    cmds:
+      - go test -v -timeout=10m -tags=integration ./tests/integration/
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run --timeout=10m ./...
+
+  govulncheck:
+    desc: Run vulnerability check
+    cmds:
+      - govulncheck ./...
+
+  generate:
+    desc: Generate code and CRD/RBAC manifests via controller-gen
+    cmds:
+      - controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+      - controller-gen rbac:roleName=manager-role crd webhook paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
+
+  verify-generate:
+    desc: Verify code generation produces no git diffs
+    deps: [generate]
+    cmds:
+      - 'git diff --exit-code || (echo "Error: working tree is dirty after generation. Run 'task generate' and commit changes." && exit 1)'
+
+  helm-lint:
+    desc: Helm lint
+    cmds:
+      - helm lint charts/omniroute-operator --strict
+
+  helm-package:
+    desc: Package Helm chart
+    cmds:
+      - mkdir -p .helm-pkg
+      - helm package charts/omniroute-operator -d .helm-pkg
+
+  helm-push:
+    desc: Package and push Helm chart to OCI registry
+    cmds:
+      - task: helm-package
+      - helm push .helm-pkg/omniroute-operator-*.tgz oci://ghcr.io/vinaycharlie01/helm-charts
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf bin dist .helm-pkg coverage.out
