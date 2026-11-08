@@ -26,7 +26,7 @@ single `kubectl apply`.
 - Leader election for high-availability operator deployments
 - Multi-arch container images (linux/amd64, linux/arm64)
 - Helm chart for operator installation
-- One-command local cluster via [k3d](https://k3d.io/) + [Nava](https://github.com/nirantaraai/nava) mage targets
+- Local development cluster via [k3d](https://k3d.io/) and build/test automation via [Task](https://taskfile.dev/)
 
 ## Prerequisites
 
@@ -42,31 +42,38 @@ For local development and testing:
 |------|---------|
 | [k3d](https://k3d.io/) | >= 5.6 |
 | Docker | >= 24 |
+| [Helm](https://helm.sh/) | >= 3.12 |
 | Go | 1.27 |
 | [Task](https://taskfile.dev/) | v3 |
 
 ## Quick Start — Local Cluster with k3d
 
-The operator ships with a `k3d.yaml` config and Task targets that handle
-the entire local cluster lifecycle: create, bootstrap, install operator, and teardown.
+The repository includes the pieces needed to run the operator on a local
+[k3d](https://k3d.io/) cluster: a namespace kustomization in
+`config/k3d/infrastructure`, the Helm chart in `charts/omniroute-operator`, and an
+optional `registries.yaml` for networks behind a TLS-intercepting proxy.
 
 ### 1. Create the cluster and install the operator
 
 ```bash
-go install github.com/go-task/task/v3/cmd/task@latest
+# Create a single-node cluster with port 20128 forwarded to your host
+k3d cluster create omniroute \
+  --servers 1 --agents 0 \
+  -p "20128:20128@server:0" \
+  --k3s-arg "--disable=traefik@server:0"
+# Behind a corporate/VPN TLS proxy? Add: --registry-config registries.yaml
 
-task build
+# Create the omniroute-system and ai-platform namespaces
+kubectl apply -k config/k3d/infrastructure
+
+# Install the operator Helm chart
+helm install omniroute-operator charts/omniroute-operator \
+  --namespace omniroute-system --wait --timeout 120s
 ```
 
-This single command:
-- Creates a k3d cluster named `omniroute` with port `20128` forwarded to your host
-- Bootstraps infrastructure (creates `omniroute-system` and `ai-platform` namespaces)
-- Installs the operator Helm chart into `omniroute-system`
-
-Verify everything is running:
+Verify the operator is running:
 
 ```bash
-task lint
 kubectl get pods -n omniroute-system
 ```
 
@@ -153,7 +160,7 @@ Open **http://localhost:20128** in your browser.
 
 **Option B — Direct access via k3d port mapping (already configured)**
 
-The `k3d.yaml` maps port `20128` from the cluster to your host. If the OmniRoute
+The `-p "20128:20128@server:0"` flag used in step 1 maps port `20128` from the cluster to your host. If the OmniRoute
 Service is a `NodePort` targeting port 20128, you can access it directly at
 **http://localhost:20128** without port-forwarding.
 
@@ -216,35 +223,25 @@ curl http://localhost:20128/v1/chat/completions \
 
 ```bash
 kubectl delete omniroute omniroute -n ai-platform
-# cleanup cluster if needed
+
+# Remove the local cluster entirely
+k3d cluster delete omniroute
 ```
 
 ## k3d Configuration
 
-The cluster is configured in `k3d.yaml` (Nava k3d format):
+The local cluster is created directly with the `k3d` CLI (see Quick Start step 1).
+Common customizations:
 
-```yaml
-cluster:
-  name: omniroute
-  servers: 1
-  agents: 0
-  ports:
-    - "20128:20128@server:0"    # OmniRoute UI + API
-  k3sArgs:
-    - "--disable=traefik@server:0"
+| Goal | Flag |
+|------|------|
+| Expose another port | `-p "<host>:<container>@server:0"` |
+| Multi-node testing | `--agents 2` |
+| Trust a TLS-intercepting proxy | `--registry-config registries.yaml` |
+| Keep Traefik as ingress controller | omit `--k3s-arg "--disable=traefik@server:0"` |
 
-infrastructure:
-  kustomizePath: config/k3d/infrastructure
-
-releases:
-  - name: omniroute-operator
-    chart: charts/omniroute-operator
-    namespace: omniroute-system
-    wait: true
-    timeout: "120s"
-```
-
-You can customize ports, add agents for multi-node testing, or add extra Helm releases.
+Namespaces are managed by the kustomization in `config/k3d/infrastructure`;
+add extra manifests there and re-run `kubectl apply -k config/k3d/infrastructure`.
 
 ## Helm Installation (Production)
 

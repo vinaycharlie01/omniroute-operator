@@ -8,10 +8,9 @@
 # certificate bundle.
 #
 # k3d mounts this file into every node at cluster creation time via:
-#   k3d cluster create --registry-config registries.yaml
+#   k3d cluster create omniroute --registry-config registries.yaml
 #
-# The cluster.registryConfig field in k3d.yaml references this file so that
-# `mage k3d:create` picks it up automatically.
+# See the README "Quick Start" section for the full cluster create command.
 #
 # HOW IT WORKS (k3s v1.31+ / containerd v2):
 #   k3s parses mirrors + configs together and writes per-registry hosts.toml
