@@ -55,3 +55,11 @@ healthProbes:
   livenessPath: /healthz
   readinessPath: /readyz
   port: 8081
+
+# Default Secret configuration for managed OmniRoute instances
+defaultSecret:
+  enabled: false
+  name: "omniroute-secrets"
+  jwtSecret: ""
+  apiKeySecret: ""
+  initialPassword: ""
