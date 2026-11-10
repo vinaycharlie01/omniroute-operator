@@ -58,8 +58,8 @@ healthProbes:
 
 # Default Secret configuration for managed OmniRoute instances
 defaultSecret:
-  enabled: false
+  enabled: true
   name: "omniroute-secrets"
-  jwtSecret: ""
-  apiKeySecret: ""
-  initialPassword: ""
+  jwtSecret: "omniroute-default-jwt-secret-key-change-in-production"
+  apiKeySecret: "omniroute-default-api-key-secret-key-change-in-production"
+  initialPassword: "SuperSecretAdmin123!"
