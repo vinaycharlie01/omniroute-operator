@@ -105,7 +105,7 @@ func (r *OmniRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	persistEnabled := omniroute.Spec.Persistence.Enabled == nil || *omniroute.Spec.Persistence.Enabled
 	if persistEnabled {
 		// Reconcile credentials secret if InitialPassword is provided or ExistingSecret is used.
-		if omniroute.Spec.Credentials.InitialPassword != "" {
+		if omniroute.Spec.Credentials.InitialPassword != "" || omniroute.Spec.Credentials.ExistingSecret != "" {
 			if err := r.reconcileCredentialsSecret(ctx, omniroute); err != nil {
 				r.setCondition(omniroute, gatewayv1alpha1.ConditionDegraded, metav1.ConditionTrue, "SecretFailed", err.Error())
 				_ = r.statusUpdate(ctx, omniroute)
