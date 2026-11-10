@@ -26,7 +26,7 @@ spec:
   config:
     existingConfigMap: omniroute-config
   credentials:
-    initialPassword: "MySecurePassword123!"
+    initialPassword: "SuperSecretAdmin123!"
   persistence:
     enabled: true
     size: 256Mi

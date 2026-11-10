@@ -56,10 +56,4 @@ healthProbes:
   readinessPath: /readyz
   port: 8081
 
-# Default Secret configuration for managed OmniRoute instances
-defaultSecret:
-  enabled: true
-  name: "omniroute-secrets"
-  jwtSecret: "omniroute-default-jwt-secret-key-change-in-production"
-  apiKeySecret: "omniroute-default-api-key-secret-key-change-in-production"
-  initialPassword: "SuperSecretAdmin123!"
+
