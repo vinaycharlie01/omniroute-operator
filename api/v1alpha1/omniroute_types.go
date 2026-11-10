@@ -130,13 +130,18 @@ type ConfigSpec struct {
 	ExistingConfigMap string `json:"existingConfigMap,omitempty"`
 }
 
-// CredentialsSpec references an existing Secret.
+// CredentialsSpec references an existing Secret or sets direct credentials.
 type CredentialsSpec struct {
 	// ExistingSecret is the name of an existing Secret containing JWT_SECRET,
 	// API_KEY_SECRET, and INITIAL_PASSWORD keys.
 	// Additional keys like STORAGE_ENCRYPTION_KEY are also injected if present.
 	// +optional
 	ExistingSecret string `json:"existingSecret,omitempty"`
+
+	// InitialPassword sets the initial dashboard password directly in the spec.
+	// If set, the operator automatically creates or manages a Secret for credentials.
+	// +optional
+	InitialPassword string `json:"initialPassword,omitempty"`
 }
 
 // PersistenceSpec configures PVC storage for OmniRoute data.

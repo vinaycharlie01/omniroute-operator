@@ -80,7 +80,7 @@ tasks:
     desc: Verify code generation produces no git diffs
     deps: [generate]
     cmds:
-      - 'git diff --exit-code || (echo "Error: working tree is dirty after generation. Run 'task generate' and commit changes." && exit 1)'
+      - git diff --exit-code
 
   helm-lint:
     desc: Helm lint

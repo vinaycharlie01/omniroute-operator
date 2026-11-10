@@ -21,21 +21,21 @@ spec:
       cpu: 50m
       memory: 128Mi
     limits:
-      cpu: 250m
-      memory: 256Mi
+      cpu: 500m
+      memory: 1Gi
   config:
     existingConfigMap: omniroute-config
   credentials:
-    existingSecret: omniroute-secrets
+    initialPassword: "MySecurePassword123!"
   persistence:
     enabled: true
     size: 256Mi
     storageClass: local-path
     accessMode: ReadWriteOnce
   probes:
-    livenessPath: /api/monitoring/health
-    readinessPath: /api/monitoring/health
-    startupPath: /api/monitoring/health
+    livenessPath: /
+    readinessPath: /
+    startupPath: /
   # basePath: "/omniroute"
   # env:
   #   - name: APP_LOG_LEVEL

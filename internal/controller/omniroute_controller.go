@@ -104,6 +104,15 @@ func (r *OmniRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Reconcile owned resources.
 	persistEnabled := omniroute.Spec.Persistence.Enabled == nil || *omniroute.Spec.Persistence.Enabled
 	if persistEnabled {
+		// Reconcile credentials secret if InitialPassword is provided or ExistingSecret is used.
+		if omniroute.Spec.Credentials.InitialPassword != "" {
+			if err := r.reconcileCredentialsSecret(ctx, omniroute); err != nil {
+				r.setCondition(omniroute, gatewayv1alpha1.ConditionDegraded, metav1.ConditionTrue, "SecretFailed", err.Error())
+				_ = r.statusUpdate(ctx, omniroute)
+				return ctrl.Result{}, err
+			}
+		}
+
 		if err := r.reconcilePVC(ctx, omniroute); err != nil {
 			r.setCondition(omniroute, gatewayv1alpha1.ConditionDegraded, metav1.ConditionTrue, "PVCFailed", err.Error())
 			_ = r.statusUpdate(ctx, omniroute)
@@ -137,6 +146,65 @@ func (r *OmniRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func credentialsSecretName(name string) string {
+	return name + "-credentials"
+}
+
+func (r *OmniRouteReconciler) reconcileCredentialsSecret(ctx context.Context, cr *gatewayv1alpha1.OmniRoute) error {
+	log := logf.FromContext(ctx)
+	labels := labelsForOmniRoute(cr.Name)
+	secretName := credentialsSecretName(cr.Name)
+
+	existing := &corev1.Secret{}
+	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: cr.Namespace}, existing)
+	if errors.IsNotFound(err) {
+		// Generate initial secret values if not present
+		jwtSecret := "auto-generated-jwt-secret-" + cr.Name + "-key"
+		apiKeySecret := "auto-generated-api-key-secret-" + cr.Name + "-key"
+
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: cr.Namespace,
+				Labels:    labels,
+			},
+			StringData: map[string]string{
+				"JWT_SECRET":       jwtSecret,
+				"API_KEY_SECRET":   apiKeySecret,
+				"INITIAL_PASSWORD": cr.Spec.Credentials.InitialPassword,
+			},
+		}
+
+		if err := controllerutil.SetControllerReference(cr, secret, r.Scheme); err != nil {
+			return fmt.Errorf("setting controller reference on Secret: %w", err)
+		}
+
+		log.Info("Creating Credentials Secret", "name", secretName)
+		return r.Create(ctx, secret)
+	}
+	if err != nil {
+		return err
+	}
+
+	// Update INITIAL_PASSWORD if it changed in the spec
+	if existing.Data == nil || string(existing.Data["INITIAL_PASSWORD"]) != cr.Spec.Credentials.InitialPassword {
+		if existing.StringData == nil {
+			existing.StringData = make(map[string]string)
+		}
+		existing.StringData["INITIAL_PASSWORD"] = cr.Spec.Credentials.InitialPassword
+		if _, ok := existing.Data["JWT_SECRET"]; !ok && existing.StringData["JWT_SECRET"] == "" {
+			existing.StringData["JWT_SECRET"] = "auto-generated-jwt-secret-" + cr.Name + "-key"
+		}
+		if _, ok := existing.Data["API_KEY_SECRET"]; !ok && existing.StringData["API_KEY_SECRET"] == "" {
+			existing.StringData["API_KEY_SECRET"] = "auto-generated-api-key-secret-" + cr.Name + "-key"
+		}
+		log.Info("Updating Credentials Secret", "name", secretName)
+		return r.Update(ctx, existing)
+	}
+
+	return nil
 }
 
 func (r *OmniRouteReconciler) reconcilePVC(ctx context.Context, cr *gatewayv1alpha1.OmniRoute) error {
@@ -524,8 +592,15 @@ func buildEnvVars(cr *gatewayv1alpha1.OmniRoute, port int32) []corev1.EnvVar {
 		})
 	}
 
-	// Inject credentials from existing Secret.
+	// Inject credentials from existing Secret or managed secret via InitialPassword.
+	secretName := ""
 	if cr.Spec.Credentials.ExistingSecret != "" {
+		secretName = cr.Spec.Credentials.ExistingSecret
+	} else if cr.Spec.Credentials.InitialPassword != "" {
+		secretName = credentialsSecretName(cr.Name)
+	}
+
+	if secretName != "" {
 		secretKeys := []string{"JWT_SECRET", "API_KEY_SECRET", "INITIAL_PASSWORD"}
 		for _, key := range secretKeys {
 			envs = append(envs, corev1.EnvVar{
@@ -533,7 +608,7 @@ func buildEnvVars(cr *gatewayv1alpha1.OmniRoute, port int32) []corev1.EnvVar {
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: cr.Spec.Credentials.ExistingSecret,
+							Name: secretName,
 						},
 						Key: key,
 					},
