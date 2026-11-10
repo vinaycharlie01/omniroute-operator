@@ -74,6 +74,7 @@ tasks:
     desc: Generate code and CRD/RBAC manifests via controller-gen
     cmds:
       - controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+      - controller-gen rbac:roleName=manager-role crd webhook paths="./api/v1alpha1" output:crd:artifacts:config=config/crd/bases
       - controller-gen rbac:roleName=manager-role crd webhook paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
       - cp config/crd/bases/*.yaml charts/omniroute-operator/crds/
 
