@@ -1127,3 +1127,64 @@ func TestBuildEnvFrom(t *testing.T) {
 		t.Errorf("configMapRef name = %q, want my-cm", envFrom[0].ConfigMapRef.Name)
 	}
 }
+
+func TestReconcile_InitialPassword(t *testing.T) {
+	scheme := newScheme()
+	testNamePwd := "pwd-reconcile-test"
+	cr := &gatewayv1alpha1.OmniRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: testNamePwd, Namespace: testNamespace},
+		Spec: gatewayv1alpha1.OmniRouteSpec{
+			Credentials: gatewayv1alpha1.CredentialsSpec{
+				InitialPassword: "SuperSecretPassword999!",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).WithStatusSubresource(cr).Build()
+	r := &OmniRouteReconciler{Client: fakeClient, Scheme: scheme}
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testNamePwd, Namespace: testNamespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	// Verify secret was created
+	secret := &corev1.Secret{}
+	err = fakeClient.Get(context.Background(), types.NamespacedName{
+		Name: credentialsSecretName(testNamePwd), Namespace: testNamespace,
+	}, secret)
+	if err != nil {
+		t.Fatalf("expected credentials secret to be created, got error: %v", err)
+	}
+
+	if secret.StringData["INITIAL_PASSWORD"] != "SuperSecretPassword999!" {
+		t.Errorf("secret INITIAL_PASSWORD = %q, want SuperSecretPassword999!", secret.StringData["INITIAL_PASSWORD"])
+	}
+
+	// Verify deployment container env vars reference the secret
+	dep := &appsv1.Deployment{}
+	_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: testNamePwd, Namespace: testNamespace}, dep)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	var foundPwdRef, foundJwtRef bool
+	for _, e := range container.Env {
+		if e.Name == "INITIAL_PASSWORD" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+			if e.ValueFrom.SecretKeyRef.Name == credentialsSecretName(testNamePwd) {
+				foundPwdRef = true
+			}
+		}
+		if e.Name == "JWT_SECRET" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+			if e.ValueFrom.SecretKeyRef.Name == credentialsSecretName(testNamePwd) {
+				foundJwtRef = true
+			}
+		}
+	}
+
+	if !foundPwdRef {
+		t.Error("INITIAL_PASSWORD env ref to secret not found in deployment container")
+	}
+	if !foundJwtRef {
+		t.Error("JWT_SECRET env ref to secret not found in deployment container")
+	}
+}

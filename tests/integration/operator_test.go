@@ -28,12 +28,12 @@ import (
 )
 
 const (
-	k3sImage       = "rancher/k3s:v1.31.4-k3s1"
-	testTimeout    = 3 * time.Minute
-	pollInterval   = 2 * time.Second
-	testNamespace  = "test-omniroute"
-	operatorNS     = "omniroute-system"
-	crdName        = "omniroutes.gateway.omniroute.ai"
+	k3sImage      = "rancher/k3s:v1.31.4-k3s1"
+	testTimeout   = 3 * time.Minute
+	pollInterval  = 2 * time.Second
+	testNamespace = "test-omniroute"
+	operatorNS    = "omniroute-system"
+	crdName       = "omniroutes.gateway.omniroute.ai"
 )
 
 var omnirouteGVR = schema.GroupVersionResource{
@@ -574,4 +574,45 @@ func TestPersistenceStorageClassField(t *testing.T) {
 
 	mode, _, _ := unstructured.NestedString(created.Object, "spec", "persistence", "accessMode")
 	assert.Equal(t, "ReadWriteOnce", mode)
+}
+
+func TestInitialPasswordSpecField(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	_, clientset, dynClient, apiextClient := startK3s(t, ctx)
+
+	waitForCRD(t, ctx, apiextClient)
+
+	_, err := clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	cr := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "gateway.omniroute.ai/v1alpha1",
+			"kind":       "OmniRoute",
+			"metadata": map[string]interface{}{
+				"name":      "pwd-test",
+				"namespace": testNamespace,
+			},
+			"spec": map[string]interface{}{
+				"credentials": map[string]interface{}{
+					"initialPassword": "MySecureAdminPassword123!",
+				},
+			},
+		},
+	}
+
+	created, err := dynClient.Resource(omnirouteGVR).Namespace(testNamespace).Create(ctx, cr, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	pw, found, err := unstructured.NestedString(created.Object, "spec", "credentials", "initialPassword")
+	require.NoError(t, err)
+	assert.True(t, found, "initialPassword field should be present")
+	assert.Equal(t, "MySecureAdminPassword123!", pw)
 }
