@@ -174,6 +174,11 @@ Open **http://localhost:20128** in your browser and log in with `INITIAL_PASSWOR
 | `spec.gateway.gatewayName` | string | `eg` | Gateway resource name |
 | `spec.gateway.hostname` | string | — | Hostname for HTTPRoute rule |
 
+> **Note on Gateway API:** If you use `spec.gateway.enabled: true`, ensure Envoy Gateway is installed in your cluster:
+> ```bash
+> helm install eg oci://docker.io/envoyproxy/gateway-helm --version v0.0.0-latest -n envoy-gateway-system --create-namespace
+> ```
+
 ### Redis & Encryption
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
