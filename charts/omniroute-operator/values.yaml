@@ -51,9 +51,17 @@ metrics:
   service:
     port: 8443
 
+defaultSecret:
+  enabled: false
+  name: omniroute-default-secret
+  jwtSecret: ""
+  apiKeySecret: ""
+  initialPassword: ""
+
 healthProbes:
+  port: 8081
   livenessPath: /healthz
   readinessPath: /readyz
-  port: 8081
+
 
 
