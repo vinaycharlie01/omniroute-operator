@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/vinaycharlie01/omniroute-operator
-  tag: "sha-acd3252"
+  tag: "sha-dd879c7"
   pullPolicy: Always
 
 imagePullSecrets: []
