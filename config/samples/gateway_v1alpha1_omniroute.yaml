@@ -40,14 +40,11 @@ spec:
   # env:
   #   - name: APP_LOG_LEVEL
   #     value: "info"
-  # ingress:
-  #   enabled: true
-  #   className: nginx
-  #   host: omniroute.example.com
-  #   annotations:
-  #     cert-manager.io/cluster-issuer: letsencrypt-prod
-  #   tls:
-  #     secretName: omniroute-tls
+  gateway:
+    enabled: true
+    gatewayClassName: eg
+    gatewayName: eg
+    hostname: omniroute.example.com
   # redis:
   #   url: redis://redis:6379
   #   keyPrefix: "omniroute:"

@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	gatewayv1alpha1 "github.com/vinaycharlie01/omniroute-operator/api/v1alpha1"
 )
@@ -64,6 +65,7 @@ func newScheme() *runtime.Scheme {
 	utilruntime.Must(clientgoscheme.AddToScheme(s))
 	utilruntime.Must(gatewayv1alpha1.AddToScheme(s))
 	utilruntime.Must(networkingv1.AddToScheme(s))
+	utilruntime.Must(gatewayv1beta1.AddToScheme(s))
 	return s
 }
 

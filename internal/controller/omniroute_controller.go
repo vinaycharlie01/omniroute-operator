@@ -36,6 +36,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	gatewayv1alpha1 "github.com/vinaycharlie01/omniroute-operator/api/v1alpha1"
+	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 const (
@@ -134,6 +135,12 @@ func (r *OmniRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	if err := r.reconcileIngress(ctx, omniroute); err != nil {
 		r.setCondition(omniroute, gatewayv1alpha1.ConditionDegraded, metav1.ConditionTrue, "IngressFailed", err.Error())
+		_ = r.statusUpdate(ctx, omniroute)
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileGatewayAPI(ctx, omniroute); err != nil {
+		r.setCondition(omniroute, gatewayv1alpha1.ConditionDegraded, metav1.ConditionTrue, "GatewayAPIFailed", err.Error())
 		_ = r.statusUpdate(ctx, omniroute)
 		return ctrl.Result{}, err
 	}
@@ -310,6 +317,111 @@ func (r *OmniRouteReconciler) reconcileService(ctx context.Context, cr *gatewayv
 	existing.Spec.Type = desired.Spec.Type
 	log.Info("Updating Service", "name", existing.Name)
 	return r.Update(ctx, existing)
+}
+
+func (r *OmniRouteReconciler) reconcileGatewayAPI(ctx context.Context, cr *gatewayv1alpha1.OmniRoute) error {
+	log := logf.FromContext(ctx)
+
+	if cr.Spec.Gateway == nil || !cr.Spec.Gateway.Enabled {
+		// Delete HTTPRoute if it exists and is no longer enabled.
+		existingRoute := &gatewayv1beta1.HTTPRoute{}
+		routeKey := types.NamespacedName{Name: cr.Name + "-route", Namespace: cr.Namespace}
+		if err := r.Get(ctx, routeKey, existingRoute); err == nil {
+			log.Info("Deleting HTTPRoute (Gateway API no longer enabled)", "name", existingRoute.Name)
+			if err := r.Delete(ctx, existingRoute); err != nil {
+				return err
+			}
+		} else if !errors.IsNotFound(err) {
+			return err
+		}
+		return nil
+	}
+
+	// Reconcile HTTPRoute
+	desiredRoute := r.buildHTTPRoute(cr)
+	if err := controllerutil.SetControllerReference(cr, desiredRoute, r.Scheme); err != nil {
+		return fmt.Errorf("setting controller reference on HTTPRoute: %w", err)
+	}
+
+	existingRoute := &gatewayv1beta1.HTTPRoute{}
+	routeKey := types.NamespacedName{Name: desiredRoute.Name, Namespace: desiredRoute.Namespace}
+	err := r.Get(ctx, routeKey, existingRoute)
+	if errors.IsNotFound(err) {
+		log.Info("Creating HTTPRoute", "name", desiredRoute.Name)
+		return r.Create(ctx, desiredRoute)
+	}
+	if err != nil {
+		return err
+	}
+
+	existingRoute.Spec = desiredRoute.Spec
+	log.Info("Updating HTTPRoute", "name", existingRoute.Name)
+	return r.Update(ctx, existingRoute)
+}
+
+func (r *OmniRouteReconciler) buildHTTPRoute(cr *gatewayv1alpha1.OmniRoute) *gatewayv1beta1.HTTPRoute {
+	labels := labelsForOmniRoute(cr.Name)
+	port := servicePort(cr)
+
+	gwName := cr.Spec.Gateway.GatewayName
+	if gwName == "" {
+		gwName = "eg"
+	}
+
+	hostname := gatewayv1beta1.Hostname(cr.Spec.Gateway.Hostname)
+	var hostnames []gatewayv1beta1.Hostname
+	if hostname != "" {
+		hostnames = []gatewayv1beta1.Hostname{hostname}
+	}
+
+	pathType := gatewayv1beta1.PathMatchType(gatewayv1beta1.PathMatchPathPrefix)
+	pathValue := "/"
+
+	route := &gatewayv1beta1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cr.Name + "-route",
+			Namespace: cr.Namespace,
+			Labels:    labels,
+		},
+		Spec: gatewayv1beta1.HTTPRouteSpec{
+			CommonRouteSpec: gatewayv1beta1.CommonRouteSpec{
+				ParentRefs: []gatewayv1beta1.ParentReference{
+					{
+						Name: gatewayv1beta1.ObjectName(gwName),
+					},
+				},
+			},
+			Hostnames: hostnames,
+			Rules: []gatewayv1beta1.HTTPRouteRule{
+				{
+					Matches: []gatewayv1beta1.HTTPRouteMatch{
+						{
+							Path: &gatewayv1beta1.HTTPPathMatch{
+								Type:  &pathType,
+								Value: &pathValue,
+							},
+						},
+					},
+					BackendRefs: []gatewayv1beta1.HTTPBackendRef{
+						{
+							BackendRef: gatewayv1beta1.BackendRef{
+								BackendObjectReference: gatewayv1beta1.BackendObjectReference{
+									Kind: (*gatewayv1beta1.Kind)(toPtr("Service")),
+									Name: gatewayv1beta1.ObjectName(cr.Name),
+									Port: (*gatewayv1beta1.PortNumber)(&port),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	return route
+}
+
+func toPtr[T any](v T) *T {
+	return &v
 }
 
 func (r *OmniRouteReconciler) reconcileIngress(ctx context.Context, cr *gatewayv1alpha1.OmniRoute) error {

@@ -62,6 +62,10 @@ type OmniRouteSpec struct {
 	// +optional
 	Probes *ProbesSpec `json:"probes,omitempty"`
 
+	// Gateway configures Kubernetes Gateway API resources.
+	// +optional
+	Gateway *GatewayAPIASpec `json:"gateway,omitempty"`
+
 	// Ingress configures an optional Ingress resource for external access.
 	// +optional
 	Ingress *IngressSpec `json:"ingress,omitempty"`
@@ -186,7 +190,26 @@ type ProbesSpec struct {
 	StartupPath string `json:"startupPath,omitempty"`
 }
 
-// IngressSpec configures the Ingress resource.
+// GatewayAPIASpec configures Kubernetes Gateway API (Gateway and HTTPRoute).
+type GatewayAPIASpec struct {
+	// Enabled controls whether Gateway API resources are created.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// GatewayClassName is the name of the GatewayClass (e.g. "eg" for Envoy Gateway).
+	// +kubebuilder:default="eg"
+	// +optional
+	GatewayClassName string `json:"gatewayClassName,omitempty"`
+
+	// GatewayName is the name of the Gateway resource.
+	// +kubebuilder:default="eg"
+	// +optional
+	GatewayName string `json:"gatewayName,omitempty"`
+
+	// Hostname is the hostname for the HTTPRoute rule.
+	// +optional
+	Hostname string `json:"hostname,omitempty"`
+}
 type IngressSpec struct {
 	// Enabled controls whether an Ingress resource is created.
 	// +optional
