@@ -405,7 +405,7 @@ func TestHelmChartInstallation(t *testing.T) {
 	chartData, err := os.ReadFile(chartPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(chartData), "name: omniroute-operator")
-	assert.Contains(t, string(chartData), "version: 0.1.0")
+	assert.Contains(t, string(chartData), "version: 0.1.6")
 }
 
 func TestSampleCRApply(t *testing.T) {
