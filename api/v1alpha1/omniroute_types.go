@@ -209,6 +209,11 @@ type GatewayAPIASpec struct {
 	// Hostname is the hostname for the HTTPRoute rule.
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
+
+	// GatewayPort is the port on which the Gateway listens.
+	// +kubebuilder:default=8080
+	// +optional
+	GatewayPort int32 `json:"gatewayPort,omitempty"`
 }
 type IngressSpec struct {
 	// Enabled controls whether an Ingress resource is created.

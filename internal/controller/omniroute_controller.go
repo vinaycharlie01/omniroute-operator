@@ -67,7 +67,7 @@ type OmniRouteReconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gatewayclasses;gateways;httproutes,verbs=get;list;watch;create;update;patch;delete
 
 func (r *OmniRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -338,7 +338,39 @@ func (r *OmniRouteReconciler) reconcileGatewayAPI(ctx context.Context, cr *gatew
 		return nil
 	}
 
-	// Reconcile HTTPRoute
+	// 1. Reconcile GatewayClass
+	desiredGC := r.buildGatewayClass(cr)
+	existingGC := &gatewayv1beta1.GatewayClass{}
+	gcKey := types.NamespacedName{Name: desiredGC.Name}
+	if err := r.Get(ctx, gcKey, existingGC); errors.IsNotFound(err) {
+		log.Info("Creating GatewayClass", "name", desiredGC.Name)
+		if err := r.Create(ctx, desiredGC); err != nil {
+			return fmt.Errorf("creating GatewayClass: %w", err)
+		}
+	} else if err != nil {
+		return err
+	}
+
+	// 2. Reconcile Gateway
+	desiredGW := r.buildGateway(cr)
+	existingGW := &gatewayv1beta1.Gateway{}
+	gwKey := types.NamespacedName{Name: desiredGW.Name, Namespace: desiredGW.Namespace}
+	if err := r.Get(ctx, gwKey, existingGW); errors.IsNotFound(err) {
+		log.Info("Creating Gateway", "name", desiredGW.Name, "namespace", desiredGW.Namespace)
+		if err := r.Create(ctx, desiredGW); err != nil {
+			return fmt.Errorf("creating Gateway: %w", err)
+		}
+	} else if err != nil {
+		return err
+	} else {
+		existingGW.Spec = desiredGW.Spec
+		log.Info("Updating Gateway", "name", existingGW.Name, "namespace", existingGW.Namespace)
+		if err := r.Update(ctx, existingGW); err != nil {
+			return err
+		}
+	}
+
+	// 3. Reconcile HTTPRoute
 	desiredRoute := r.buildHTTPRoute(cr)
 	if err := controllerutil.SetControllerReference(cr, desiredRoute, r.Scheme); err != nil {
 		return fmt.Errorf("setting controller reference on HTTPRoute: %w", err)
@@ -358,6 +390,55 @@ func (r *OmniRouteReconciler) reconcileGatewayAPI(ctx context.Context, cr *gatew
 	existingRoute.Spec = desiredRoute.Spec
 	log.Info("Updating HTTPRoute", "name", existingRoute.Name)
 	return r.Update(ctx, existingRoute)
+}
+
+func (r *OmniRouteReconciler) buildGatewayClass(cr *gatewayv1alpha1.OmniRoute) *gatewayv1beta1.GatewayClass {
+	gcName := cr.Spec.Gateway.GatewayClassName
+	if gcName == "" {
+		gcName = "eg"
+	}
+	return &gatewayv1beta1.GatewayClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: gcName,
+		},
+		Spec: gatewayv1beta1.GatewayClassSpec{
+			ControllerName: gatewayv1beta1.GatewayController("gateway.envoyproxy.io/gatewayclass-controller"),
+		},
+	}
+}
+
+func (r *OmniRouteReconciler) buildGateway(cr *gatewayv1alpha1.OmniRoute) *gatewayv1beta1.Gateway {
+	labels := labelsForOmniRoute(cr.Name)
+	gwName := cr.Spec.Gateway.GatewayName
+	if gwName == "" {
+		gwName = "eg"
+	}
+	gcName := cr.Spec.Gateway.GatewayClassName
+	if gcName == "" {
+		gcName = "eg"
+	}
+	port := cr.Spec.Gateway.GatewayPort
+	if port == 0 {
+		port = 8080
+	}
+
+	return &gatewayv1beta1.Gateway{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      gwName,
+			Namespace: cr.Namespace,
+			Labels:    labels,
+		},
+		Spec: gatewayv1beta1.GatewaySpec{
+			GatewayClassName: gatewayv1beta1.ObjectName(gcName),
+			Listeners: []gatewayv1beta1.Listener{
+				{
+					Name:     gatewayv1beta1.SectionName("http"),
+					Protocol: gatewayv1beta1.HTTPProtocolType,
+					Port:     gatewayv1beta1.PortNumber(port),
+				},
+			},
+		},
+	}
 }
 
 func (r *OmniRouteReconciler) buildHTTPRoute(cr *gatewayv1alpha1.OmniRoute) *gatewayv1beta1.HTTPRoute {

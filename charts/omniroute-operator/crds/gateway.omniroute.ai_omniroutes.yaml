@@ -232,6 +232,11 @@ spec:
                     default: eg
                     description: GatewayName is the name of the Gateway resource.
                     type: string
+                  gatewayPort:
+                    default: 8080
+                    description: GatewayPort is the port on which the Gateway listens.
+                    format: int32
+                    type: integer
                   hostname:
                     description: Hostname is the hostname for the HTTPRoute rule.
                     type: string
