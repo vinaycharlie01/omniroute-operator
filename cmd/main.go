@@ -39,6 +39,7 @@ import (
 
 	gatewayv1alpha1 "github.com/vinaycharlie01/omniroute-operator/api/v1alpha1"
 	"github.com/vinaycharlie01/omniroute-operator/internal/controller"
+	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -51,6 +52,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(gatewayv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(gatewayv1beta1.Install(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
