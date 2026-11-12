@@ -374,7 +374,7 @@ func (r *OmniRouteReconciler) buildHTTPRoute(cr *gatewayv1alpha1.OmniRoute) *gat
 		hostnames = []gatewayv1beta1.Hostname{hostname}
 	}
 
-	pathType := gatewayv1beta1.PathMatchType(gatewayv1beta1.PathMatchPathPrefix)
+	pathType := gatewayv1beta1.PathMatchPathPrefix
 	pathValue := "/"
 
 	route := &gatewayv1beta1.HTTPRoute{

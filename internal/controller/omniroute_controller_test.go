@@ -65,7 +65,7 @@ func newScheme() *runtime.Scheme {
 	utilruntime.Must(clientgoscheme.AddToScheme(s))
 	utilruntime.Must(gatewayv1alpha1.AddToScheme(s))
 	utilruntime.Must(networkingv1.AddToScheme(s))
-	utilruntime.Must(gatewayv1beta1.AddToScheme(s))
+	utilruntime.Must(gatewayv1beta1.Install(s))
 	return s
 }
 
