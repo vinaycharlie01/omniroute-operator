@@ -9,8 +9,8 @@ metadata:
 spec:
   image:
     repository: diegosouzapw/omniroute
-    tag: "3.8.51"
-    pullPolicy: IfNotPresent
+    tag: "latest-web"
+    pullPolicy: Always
   replicas: 1
   service:
     type: ClusterIP

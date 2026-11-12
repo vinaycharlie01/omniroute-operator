@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/vinaycharlie01/omniroute-operator
-  tag: "sha-dca5059"
+  tag: "sha-ee16755"
   pullPolicy: Always
 
 imagePullSecrets: []
@@ -62,6 +62,3 @@ healthProbes:
   port: 8081
   livenessPath: /healthz
   readinessPath: /readyz
-
-
-
