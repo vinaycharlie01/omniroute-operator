@@ -688,6 +688,11 @@ func (r *OmniRouteReconciler) buildDeployment(cr *gatewayv1alpha1.OmniRoute) *ap
 					Containers:                    []corev1.Container{container},
 					Volumes:                       volumes,
 					TerminationGracePeriodSeconds: int64Ptr(40),
+					DNSPolicy:                     corev1.DNSNone,
+					DNSConfig: &corev1.DNSConfig{
+						Nameservers: []string{"8.8.8.8", "1.1.1.1"},
+						Searches:    []string{cr.Namespace + ".svc.cluster.local", "svc.cluster.local", "cluster.local"},
+					},
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: boolPtr(true),
 						RunAsUser:    int64Ptr(1000),
