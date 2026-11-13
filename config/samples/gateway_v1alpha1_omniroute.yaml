@@ -44,7 +44,7 @@ spec:
     enabled: true
     gatewayClassName: eg
     gatewayName: eg
-    hostname: omniroute.100.72.5.80.nip.io
+    hostname: omniroute.vinayai.co.in
     gatewayPort: 8080
   # redis:
   #   url: redis://redis:6379

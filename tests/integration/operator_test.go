@@ -459,7 +459,7 @@ func TestSampleCRApply(t *testing.T) {
 
 	// Verify spec fields from the sample.
 	tag, _, _ := unstructured.NestedString(created.Object, "spec", "image", "tag")
-	assert.Equal(t, "3.8.51", tag)
+	assert.Equal(t, "latest-web", tag)
 
 	port, _, _ := unstructured.NestedInt64(created.Object, "spec", "service", "port")
 	assert.Equal(t, int64(20128), port)
